@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Stopwatch</title>
+  <link rel="stylesheet" href="style.css">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+</head>
+<body>
+  <div class="logo-container">
+    <img src="icons/logo.jpeg" alt="Logo" class="logo">
+  </div>
+  
+  <header>
+    <h1>Stopwatch</h1>
+  </header>
+  
+  <div class="display-container">
+    <div id="display" class="time-display">00:00:00</div>
+    <div class="milliseconds">.00</div>
+  </div>
+
+  <div class="controls">
+    <button id="startStopBtn" class="btn primary">Start</button>
+    <button id="resetBtn" class="btn">Reset</button>
+  </div>
+
+  <div class="status-indicator">
+    <div id="statusDot" class="dot"></div>
+    <span id="statusText">Inactive</span>
+  </div>
+
+  <script src="popup.js"></script>
+</body>
+</html>
