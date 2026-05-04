@@ -1,11 +1,12 @@
 :root {
-  --bg-color: #ffffff;
-  --text-main: #000000;
-  --text-muted: #888888;
-  --accent-color: #000000;
-  --border-color: #e5e5e5;
-  --secondary-bg: #f5f5f5;
-  --success: #000000; /* Minimalist: keep even the dot classic */
+  --bg-color: #0a0a0a;
+  --card-bg: #141414;
+  --text-main: #ffffff;
+  --text-muted: #666666;
+  --accent-color: #ffffff;
+  --border-color: #222222;
+  --secondary-bg: #1a1a1a;
+  --success: #00ff88; /* Cyber Green */
 }
 
 * {
@@ -22,97 +23,95 @@ body {
   display: flex;
   flex-direction: column;
   align-items: center;
-  padding: 32px 24px;
+  padding: 28px 20px;
   -webkit-font-smoothing: antialiased;
 }
 
 .logo-container {
-  margin-bottom: 12px;
-  opacity: 0.8;
+  margin-bottom: 24px;
 }
 
 .logo {
-  width: 40px;
-  height: 40px;
+  width: 44px;
+  height: 44px;
   object-fit: contain;
-  filter: grayscale(100%);
+  filter: invert(1);
+  opacity: 1;
 }
 
 header h1 {
-  font-size: 0.65rem;
-  font-weight: 700;
-  color: var(--text-main);
+  font-size: 0.7rem;
+  font-weight: 600;
+  color: var(--text-muted);
   text-transform: uppercase;
-  letter-spacing: 0.3em;
-  margin-bottom: 40px;
+  letter-spacing: 0.15em;
+  margin-bottom: 32px;
 }
 
 .display-container {
   width: 100%;
+  background-color: var(--card-bg);
+  border-radius: 16px;
+  padding: 32px 16px;
   display: flex;
   flex-direction: column;
   align-items: center;
-  margin-bottom: 48px;
-  border-top: 1px solid var(--border-color);
-  border-bottom: 1px solid var(--border-color);
-  padding: 24px 0;
+  margin-bottom: 24px;
 }
 
 .time-labels {
   display: flex;
   justify-content: space-between;
   width: 100%;
-  max-width: 180px;
-  margin-bottom: 8px;
+  max-width: 190px;
+  margin-bottom: 4px;
+  opacity: 0.4;
 }
 
 .time-labels span {
-  font-size: 0.6rem;
-  font-weight: 500;
-  color: var(--text-muted);
+  font-size: 0.55rem;
+  font-weight: 600;
+  color: var(--text-main);
   letter-spacing: 0.05em;
 }
 
 .time-display {
-  font-family: 'JetBrains Mono', monospace;
-  font-size: 2.5rem;
-  font-weight: 400;
+  font-family: 'Inter', sans-serif;
+  font-variant-numeric: tabular-nums;
+  font-size: 2.75rem;
+  font-weight: 600;
   letter-spacing: -1.5px;
   line-height: 1;
   color: var(--text-main);
 }
 
 .milliseconds {
-  font-family: 'JetBrains Mono', monospace;
-  font-size: 0.875rem;
+  font-family: 'Inter', sans-serif;
+  font-variant-numeric: tabular-nums;
+  font-size: 1rem;
   color: var(--text-muted);
-  margin-top: 8px;
-  font-weight: 400;
+  margin-top: 4px;
+  font-weight: 500;
 }
 
 .controls {
   display: flex;
-  gap: 1px; /* Divider effect */
+  gap: 12px;
   width: 100%;
-  background-color: var(--border-color);
-  border: 1px solid var(--border-color);
-  border-radius: 4px;
-  overflow: hidden;
 }
 
 .btn {
   flex: 1;
-  height: 44px;
-  border: none;
+  height: 48px;
+  border: 1px solid var(--border-color);
+  border-radius: 12px;
   background: var(--bg-color);
   color: var(--text-main);
   font-family: inherit;
-  font-size: 0.8rem;
+  font-size: 0.85rem;
   font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.1em;
   cursor: pointer;
-  transition: background 0.2s ease;
+  transition: all 0.2s ease;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -120,37 +119,38 @@ header h1 {
 
 .btn:hover {
   background: var(--secondary-bg);
+  border-color: #333333;
 }
 
 .btn.primary {
   background: var(--text-main);
   color: var(--bg-color);
+  border: none;
 }
 
 .btn.primary:hover {
-  background: #333333;
+  background: #e0e0e0;
 }
 
 .status-indicator {
-  margin-top: 32px;
-  font-size: 0.6rem;
-  font-weight: 700;
+  margin-top: 24px;
+  font-size: 0.65rem;
+  font-weight: 600;
   color: var(--text-muted);
   display: flex;
   align-items: center;
   gap: 8px;
   text-transform: uppercase;
-  letter-spacing: 0.1em;
 }
 
 .dot {
-  width: 4px;
-  height: 4px;
+  width: 6px;
+  height: 6px;
   border-radius: 50%;
-  background: var(--border-color);
+  background: #333333;
 }
 
 .dot.active {
-  background: #ff3b30; /* Classic racing red for the active dot */
-  box-shadow: 0 0 0 2px rgba(255, 59, 48, 0.1);
+  background: var(--success);
+  box-shadow: 0 0 10px rgba(0, 255, 136, 0.4);
 }
