@@ -16,13 +16,16 @@ chrome.storage.local.get(['startTime', 'elapsedTime', 'isRunning'], (result) => 
 
 function formatTime(ms) {
   const seconds = Math.floor((ms / 1000) % 60);
-  const minutes = Math.floor((ms / (1000 * 60)) % 60);
-  const hours = Math.floor(ms / (1000 * 60 * 60));
-
-  if (hours > 0) {
-    return `${hours}:${minutes.toString().padStart(2, '0')}`;
+  const totalMinutes = Math.floor(ms / (1000 * 60));
+  
+  const s = seconds.toString().padStart(2, '0');
+  
+  if (totalMinutes >= 100) {
+    // If over 100 minutes, we might need to be careful with badge space
+    // but we'll try to show it anyway
+    return `${totalMinutes}:${s}`;
   }
-  return `${minutes}:${seconds.toString().padStart(2, '0')}`;
+  return `${totalMinutes}:${s}`;
 }
 
 function updateBadge() {
@@ -34,9 +37,7 @@ function updateBadge() {
   const currentElapsed = Date.now() - startTime + elapsedTime;
   const formatted = formatTime(currentElapsed);
   
-  // Badge text is limited, we might only show minutes/seconds
-  // Let's show "MM:SS" and hope for the best, or truncate
-  chrome.action.setBadgeText({ text: formatted.substring(0, 4) });
+  chrome.action.setBadgeText({ text: formatted });
   chrome.action.setBadgeBackgroundColor({ color: '#1e293b' });
 }
 
