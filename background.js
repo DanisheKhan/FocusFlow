@@ -17,20 +17,36 @@ chrome.storage.local.get(['startTime', 'elapsedTime', 'isRunning'], (result) => 
 function formatTime(ms) {
   const seconds = Math.floor((ms / 1000) % 60);
   const totalMinutes = Math.floor(ms / (1000 * 60));
+  const minutes = totalMinutes % 60;
+  const hours = Math.floor(totalMinutes / 60);
   
   const s = seconds.toString().padStart(2, '0');
+  const m = minutes.toString().padStart(2, '0');
   
-  if (totalMinutes >= 100) {
-    // If over 100 minutes, we might need to be careful with badge space
-    // but we'll try to show it anyway
+  // Update the extension tooltip with full time
+  const fullTime = `${hours.toString().padStart(2, '0')}:${m}:${s}`;
+  chrome.action.setTitle({ title: `Stopwatch: ${fullTime}` });
+
+  // If under 10 minutes, show full M:SS on badge
+  if (totalMinutes < 10) {
     return `${totalMinutes}:${s}`;
   }
-  return `${totalMinutes}:${s}`;
+  
+  // Alternating cycle every second
+  if (seconds % 2 === 0) {
+    if (hours > 0) {
+      return `${hours}:${minutes}`; // e.g. 1h12
+    }
+    return `${totalMinutes}m`; // e.g. 72m
+  } else {
+    return `${s}s`; // e.g. 34s
+  }
 }
 
 function updateBadge() {
   if (!isRunning) {
     chrome.action.setBadgeText({ text: '' });
+    chrome.action.setTitle({ title: 'Sleek Stopwatch' });
     return;
   }
 
@@ -39,6 +55,7 @@ function updateBadge() {
   
   chrome.action.setBadgeText({ text: formatted });
   chrome.action.setBadgeBackgroundColor({ color: '#1e293b' });
+  chrome.action.setBadgeTextColor({ color: '#ffffff' });
 }
 
 function startBadgeUpdate() {
