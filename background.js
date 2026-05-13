@@ -6,12 +6,13 @@ let dailyLogs = {};
 let lastRecordedDate = new Date().toLocaleDateString('en-CA');
 
 // Initialize state from storage
-chrome.storage.local.get(['startTime', 'elapsedTime', 'isRunning', 'dailyLogs', 'lastRecordedDate'], (result) => {
+chrome.storage.local.get(['startTime', 'elapsedTime', 'isRunning', 'dailyLogs', 'lastRecordedDate', 'reminderDisabledUntil'], (result) => {
   startTime = result.startTime || 0;
   elapsedTime = result.elapsedTime || 0;
   isRunning = result.isRunning || false;
   dailyLogs = result.dailyLogs || {};
   lastRecordedDate = result.lastRecordedDate || new Date().toLocaleDateString('en-CA');
+  reminderDisabledUntil = result.reminderDisabledUntil || 0;
 
   checkMidnightReset();
 
@@ -43,7 +44,8 @@ function checkMidnightReset() {
     }
     
     lastRecordedDate = today;
-    chrome.storage.local.set({ elapsedTime, startTime, lastRecordedDate });
+    reminderDisabledUntil = 0;
+    chrome.storage.local.set({ elapsedTime, startTime, lastRecordedDate, reminderDisabledUntil });
   }
 }
 
@@ -110,21 +112,36 @@ function stopBadgeUpdate() {
 }
 
 let lastReminderTime = 0;
+let reminderDisabledUntil = 0;
 const REMINDER_COOLDOWN = 60 * 60 * 1000; // 1 hour
 
 function showReminder() {
   const now = Date.now();
+  if (now < reminderDisabledUntil) return;
+
   if (!isRunning && (now - lastReminderTime > REMINDER_COOLDOWN)) {
     chrome.notifications.create('start-reminder', {
       type: 'basic',
       iconUrl: 'icons/logo.png',
       title: 'Focus Flow',
       message: 'Don\'t forget to start your tracker to stay in the flow!',
+      buttons: [{ title: 'Mute for Today' }],
       priority: 1
     });
     lastReminderTime = now;
   }
 }
+
+chrome.notifications.onButtonClicked.addListener((notificationId, buttonIndex) => {
+  if (notificationId === 'start-reminder' && buttonIndex === 0) {
+    // Mute until end of today
+    const endOfToday = new Date();
+    endOfToday.setHours(23, 59, 59, 999);
+    reminderDisabledUntil = endOfToday.getTime();
+    chrome.storage.local.set({ reminderDisabledUntil });
+    chrome.notifications.clear(notificationId);
+  }
+});
 
 chrome.tabs.onCreated.addListener(() => {
   showReminder();
