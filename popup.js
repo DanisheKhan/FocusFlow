@@ -1,5 +1,6 @@
 let isRunning = false;
 let displayTime = 0;
+let sessionStartTime = 0;
 let animationFrameId = null;
 let currentDailyLogs = {};
 let calendarDate = new Date();
@@ -7,7 +8,6 @@ let calendarDate = new Date();
 const displayEl = document.getElementById('display');
 const msEl = document.querySelector('.milliseconds');
 const startStopBtn = document.getElementById('startStopBtn');
-const resetBtn = document.getElementById('resetBtn');
 const statusText = document.getElementById('statusText');
 const statusDot = document.getElementById('statusDot');
 const historyToggleBtn = document.getElementById('historyToggleBtn');
@@ -41,7 +41,21 @@ function updateUI() {
     if (response) {
       isRunning = response.isRunning;
       displayTime = response.elapsedTime;
+      sessionStartTime = response.startTime;
       
+      // Update body state for global animations
+      if (isRunning) {
+        document.body.classList.add('isRunning');
+        startStopBtn.textContent = 'Stop';
+        startStopBtn.classList.remove('primary');
+        startStopBtn.classList.add('stop');
+      } else {
+        document.body.classList.remove('isRunning');
+        startStopBtn.textContent = 'Start';
+        startStopBtn.classList.remove('stop');
+        startStopBtn.classList.add('primary');
+      }
+
       // Only update daily logs if they changed to avoid flickering
       if (JSON.stringify(currentDailyLogs) !== JSON.stringify(response.dailyLogs)) {
         currentDailyLogs = response.dailyLogs || {};
@@ -54,16 +68,12 @@ function updateUI() {
       msEl.textContent = formatMs(displayTime);
       
       if (isRunning) {
-        startStopBtn.textContent = 'Stop';
         statusText.textContent = 'Running';
-        statusDot.classList.add('active');
         if (!animationFrameId) {
           startAnimation();
         }
       } else {
-        startStopBtn.textContent = 'Start';
         statusText.textContent = displayTime > 0 ? 'Paused' : 'Inactive';
-        statusDot.classList.remove('active');
         if (animationFrameId) {
           cancelAnimationFrame(animationFrameId);
           animationFrameId = null;
@@ -72,6 +82,8 @@ function updateUI() {
     }
   });
 }
+
+
 
 
 function startAnimation() {
@@ -115,7 +127,11 @@ function renderCalendar() {
     
     const dateStr = `${year}-${(month + 1).toString().padStart(2, '0')}-${day.toString().padStart(2, '0')}`;
     
-    if (currentDailyLogs[dateStr]) {
+    // Check if day has data or is currently active
+    const hasStoredData = currentDailyLogs[dateStr] > 0;
+    const isActiveToday = (dateStr === today && isRunning);
+    
+    if (hasStoredData || isActiveToday) {
       dayDiv.classList.add('has-data');
     }
     
@@ -128,7 +144,12 @@ function renderCalendar() {
       document.querySelectorAll('.calendar-day').forEach(el => el.classList.remove('selected'));
       dayDiv.classList.add('selected');
       
-      const timeMs = currentDailyLogs[dateStr] || 0;
+      let timeMs = currentDailyLogs[dateStr] || 0;
+      // If it's today and running, add the live session duration
+      if (dateStr === today && isRunning && sessionStartTime) {
+        timeMs += (Date.now() - sessionStartTime);
+      }
+      
       detailsDateEl.textContent = new Date(dateStr).toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
       detailsTimeEl.textContent = formatTime(timeMs);
     });
@@ -187,11 +208,13 @@ function updateStatistics() {
 
 historyToggleBtn.addEventListener('click', () => {
   const isHidden = historyPanel.classList.toggle('hidden');
+  document.body.classList.toggle('history-open', !isHidden);
   historyToggleBtn.textContent = isHidden ? 'View History' : 'Hide History';
   if (!isHidden) {
     renderCalendar();
   }
 });
+
 
 prevMonthBtn.addEventListener('click', () => {
   calendarDate.setMonth(calendarDate.getMonth() - 1);
@@ -209,10 +232,6 @@ startStopBtn.addEventListener('click', () => {
   } else {
     chrome.runtime.sendMessage({ type: 'START' }, updateUI);
   }
-});
-
-resetBtn.addEventListener('click', () => {
-  chrome.runtime.sendMessage({ type: 'RESET' }, updateUI);
 });
 
 // Initial load

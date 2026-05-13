@@ -13,10 +13,14 @@
   </div>
   
   <header>
-    <h1>Stopwatch</h1>
+    <h1>Focus Flow</h1>
   </header>
   
-  <div class="display-container">
+  <div class="display-container glass">
+    <div class="status-indicator">
+      <div id="statusDot" class="dot"></div>
+      <span id="statusText">Inactive</span>
+    </div>
     <div class="time-labels">
       <span>HR</span>
       <span>MIN</span>
@@ -28,14 +32,13 @@
 
   <div class="controls">
     <button id="startStopBtn" class="btn primary">Start</button>
-    <button id="resetBtn" class="btn">Reset</button>
   </div>
 
   <div class="secondary-controls">
     <button id="historyToggleBtn" class="btn-text">View History</button>
   </div>
 
-  <div id="historyPanel" class="history-panel hidden">
+  <div id="historyPanel" class="history-panel glass hidden">
     <div class="calendar-header">
       <button id="prevMonth" class="nav-btn">&lt;</button>
       <h2 id="currentMonthYear">May 2024</h2>
@@ -67,12 +70,8 @@
     </div>
   </div>
 
-  <div class="status-indicator">
-    <div id="statusDot" class="dot"></div>
-    <span id="statusText">Inactive</span>
-  </div>
-
   <script src="popup.js"></script>
-
 </body>
+
+
 </html>

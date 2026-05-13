@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
-  "name": "Sleek Stopwatch",
+  "name": "Focus Flow",
   "version": "1.0",
-  "description": "A professional, minimalist stopwatch for your browser.",
+  "description": "A premium, minimalist tracker for deep focus and productivity.",
   "permissions": ["storage", "alarms", "notifications"],
   "action": {
     "default_popup": "popup.html",

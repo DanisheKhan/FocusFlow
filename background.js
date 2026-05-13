@@ -3,18 +3,49 @@ let startTime = 0;
 let elapsedTime = 0;
 let isRunning = false;
 let dailyLogs = {};
+let lastRecordedDate = new Date().toLocaleDateString('en-CA');
 
 // Initialize state from storage
-chrome.storage.local.get(['startTime', 'elapsedTime', 'isRunning', 'dailyLogs'], (result) => {
+chrome.storage.local.get(['startTime', 'elapsedTime', 'isRunning', 'dailyLogs', 'lastRecordedDate'], (result) => {
   startTime = result.startTime || 0;
   elapsedTime = result.elapsedTime || 0;
   isRunning = result.isRunning || false;
   dailyLogs = result.dailyLogs || {};
+  lastRecordedDate = result.lastRecordedDate || new Date().toLocaleDateString('en-CA');
+
+  checkMidnightReset();
 
   if (isRunning) {
     startBadgeUpdate();
   }
 });
+
+function checkMidnightReset() {
+  const today = new Date().toLocaleDateString('en-CA');
+  if (today !== lastRecordedDate) {
+    // It's a new day! 
+    if (isRunning) {
+      // Split the current session: previous day part goes to logs
+      const sessionStartDate = new Date(startTime).toLocaleDateString('en-CA');
+      if (sessionStartDate !== today) {
+        const endOfPreviousDay = new Date(sessionStartDate);
+        endOfPreviousDay.setHours(23, 59, 59, 999);
+        const durationForOldDay = endOfPreviousDay.getTime() - startTime;
+        recordWorkedTime(durationForOldDay, sessionStartDate);
+        
+        // Restart session from midnight today
+        startTime = new Date().setHours(0, 0, 0, 0);
+      }
+    } else {
+      // Not running, just reset the counter for the new day
+      elapsedTime = 0;
+      startTime = 0;
+    }
+    
+    lastRecordedDate = today;
+    chrome.storage.local.set({ elapsedTime, startTime, lastRecordedDate });
+  }
+}
 
 function formatTime(ms) {
   const seconds = Math.floor((ms / 1000) % 60);
@@ -26,7 +57,7 @@ function formatTime(ms) {
   const m = minutes.toString().padStart(2, '0');
   
   const fullTime = `${hours.toString().padStart(2, '0')}:${m}:${s}`;
-  chrome.action.setTitle({ title: `Stopwatch: ${fullTime}` });
+  chrome.action.setTitle({ title: `Focus Flow: ${fullTime}` });
 
   if (totalMinutes < 10) {
     return `${totalMinutes}:${s}`;
@@ -43,9 +74,11 @@ function formatTime(ms) {
 }
 
 function updateBadge() {
+  checkMidnightReset();
+
   if (!isRunning) {
     chrome.action.setBadgeText({ text: '' });
-    chrome.action.setTitle({ title: 'Sleek Stopwatch' });
+    chrome.action.setTitle({ title: 'Focus Flow' });
     return;
   }
 
@@ -56,42 +89,11 @@ function updateBadge() {
   chrome.action.setBadgeText({ text: formatted });
   chrome.action.setBadgeBackgroundColor({ color: '#1e293b' });
   chrome.action.setBadgeTextColor({ color: '#ffffff' });
-
-  // Periodically update daily logs while running (every minute)
-  // This helps ensure data isn't lost if the day changes while running
-  if (Math.floor(currentElapsed / 1000) % 60 === 0) {
-    syncDailyTime();
-  }
 }
 
-function syncDailyTime() {
-  if (!isRunning) return;
-  
-  const now = Date.now();
-  const today = new Date().toLocaleDateString('en-CA');
-  const sessionStartTime = startTime;
-  const sessionStartDate = new Date(sessionStartTime).toLocaleDateString('en-CA');
-
-  if (today !== sessionStartDate) {
-    // Day has changed while running!
-    // 1. Record time for the previous day(s) up to midnight
-    const endOfPreviousDay = new Date(sessionStartDate);
-    endOfPreviousDay.setHours(23, 59, 59, 999);
-    
-    const durationForOldDay = endOfPreviousDay.getTime() - sessionStartTime;
-    recordWorkedTime(durationForOldDay);
-    
-    // 2. Update startTime to start of today to track the rest
-    startTime = new Date().setHours(0, 0, 0, 0);
-    chrome.storage.local.set({ startTime });
-  }
-}
-
-
-// Revised approach: track daily time on STOP and via periodic check
-function recordWorkedTime(ms) {
-  const today = new Date().toLocaleDateString('en-CA');
-  dailyLogs[today] = (dailyLogs[today] || 0) + ms;
+function recordWorkedTime(ms, date = null) {
+  const targetDate = date || new Date().toLocaleDateString('en-CA');
+  dailyLogs[targetDate] = (dailyLogs[targetDate] || 0) + ms;
   chrome.storage.local.set({ dailyLogs });
 }
 
@@ -116,25 +118,25 @@ function showReminder() {
     chrome.notifications.create('start-reminder', {
       type: 'basic',
       iconUrl: 'icons/logo.png',
-      title: 'Stopwatch Inactive',
-      message: 'Don\'t forget to start your stopwatch to track your progress!',
+      title: 'Focus Flow',
+      message: 'Don\'t forget to start your tracker to stay in the flow!',
       priority: 1
     });
     lastReminderTime = now;
   }
 }
 
-// Remind when a new tab is created (user starts "using" the browser)
 chrome.tabs.onCreated.addListener(() => {
   showReminder();
 });
 
-// Remind when the browser starts
 chrome.runtime.onStartup.addListener(() => {
   showReminder();
 });
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+  checkMidnightReset();
+
   if (message.type === 'START') {
     if (!isRunning) {
       isRunning = true;
@@ -152,19 +154,12 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       chrome.storage.local.set({ isRunning, elapsedTime });
       stopBadgeUpdate();
     }
-  } else if (message.type === 'RESET') {
-    isRunning = false;
-    startTime = 0;
-    elapsedTime = 0;
-    chrome.storage.local.set({ isRunning, startTime, elapsedTime });
-    stopBadgeUpdate();
   } else if (message.type === 'GET_STATUS') {
     const currentElapsed = isRunning ? (Date.now() - startTime + elapsedTime) : elapsedTime;
-    sendResponse({ isRunning, elapsedTime: currentElapsed, dailyLogs });
+    sendResponse({ isRunning, elapsedTime: currentElapsed, dailyLogs, startTime });
   } else if (message.type === 'GET_LOGS') {
     sendResponse({ dailyLogs });
   }
   return true;
 });
-
 
