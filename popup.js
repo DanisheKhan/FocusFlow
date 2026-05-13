@@ -1,6 +1,8 @@
 let isRunning = false;
 let displayTime = 0;
 let animationFrameId = null;
+let currentDailyLogs = {};
+let calendarDate = new Date();
 
 const displayEl = document.getElementById('display');
 const msEl = document.querySelector('.milliseconds');
@@ -8,6 +10,14 @@ const startStopBtn = document.getElementById('startStopBtn');
 const resetBtn = document.getElementById('resetBtn');
 const statusText = document.getElementById('statusText');
 const statusDot = document.getElementById('statusDot');
+const historyToggleBtn = document.getElementById('historyToggleBtn');
+const historyPanel = document.getElementById('historyPanel');
+const calendarGrid = document.getElementById('calendarGrid');
+const currentMonthYearEl = document.getElementById('currentMonthYear');
+const prevMonthBtn = document.getElementById('prevMonth');
+const nextMonthBtn = document.getElementById('nextMonth');
+const detailsDateEl = document.getElementById('detailsDate');
+const detailsTimeEl = document.getElementById('detailsTime');
 
 function formatTime(ms) {
   const seconds = Math.floor((ms / 1000) % 60);
@@ -32,6 +42,14 @@ function updateUI() {
       isRunning = response.isRunning;
       displayTime = response.elapsedTime;
       
+      // Only update daily logs if they changed to avoid flickering
+      if (JSON.stringify(currentDailyLogs) !== JSON.stringify(response.dailyLogs)) {
+        currentDailyLogs = response.dailyLogs || {};
+        if (!historyPanel.classList.contains('hidden')) {
+          renderCalendar();
+        }
+      }
+      
       displayEl.textContent = formatTime(displayTime);
       msEl.textContent = formatMs(displayTime);
       
@@ -55,6 +73,7 @@ function updateUI() {
   });
 }
 
+
 function startAnimation() {
   const step = () => {
     chrome.runtime.sendMessage({ type: 'GET_STATUS' }, (response) => {
@@ -67,6 +86,122 @@ function startAnimation() {
   };
   animationFrameId = requestAnimationFrame(step);
 }
+
+// Calendar Logic
+function renderCalendar() {
+  const year = calendarDate.getFullYear();
+  const month = calendarDate.getMonth();
+  
+  currentMonthYearEl.textContent = new Intl.DateTimeFormat('en-US', { month: 'long', year: 'numeric' }).format(calendarDate);
+  
+  calendarGrid.innerHTML = '';
+  
+  const firstDay = new Date(year, month, 1).getDay();
+  const daysInMonth = new Date(year, month + 1, 0).getDate();
+  
+  const today = new Date().toLocaleDateString('en-CA');
+  
+  // Empty slots for previous month days
+  for (let i = 0; i < firstDay; i++) {
+    const emptyDiv = document.createElement('div');
+    emptyDiv.classList.add('calendar-day', 'empty');
+    calendarGrid.appendChild(emptyDiv);
+  }
+  
+  for (let day = 1; day <= daysInMonth; day++) {
+    const dayDiv = document.createElement('div');
+    dayDiv.classList.add('calendar-day');
+    dayDiv.textContent = day;
+    
+    const dateStr = `${year}-${(month + 1).toString().padStart(2, '0')}-${day.toString().padStart(2, '0')}`;
+    
+    if (currentDailyLogs[dateStr]) {
+      dayDiv.classList.add('has-data');
+    }
+    
+    if (dateStr === today) {
+      dayDiv.classList.add('today');
+    }
+    
+    dayDiv.addEventListener('click', () => {
+      // Deselect others
+      document.querySelectorAll('.calendar-day').forEach(el => el.classList.remove('selected'));
+      dayDiv.classList.add('selected');
+      
+      const timeMs = currentDailyLogs[dateStr] || 0;
+      detailsDateEl.textContent = new Date(dateStr).toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
+      detailsTimeEl.textContent = formatTime(timeMs);
+    });
+    
+    calendarGrid.appendChild(dayDiv);
+  }
+  
+  updateStatistics();
+}
+
+function updateStatistics() {
+  const now = new Date();
+  const todayStr = now.toLocaleDateString('en-CA');
+  
+  let weeklyTotal = 0;
+  let monthlyTotal = 0;
+  let totalLogs = 0;
+  let daysWithData = 0;
+
+  const currentMonth = now.getMonth();
+  const currentYear = now.getFullYear();
+
+  // Get start of the week (Sunday)
+  const startOfWeek = new Date(now);
+  startOfWeek.setDate(now.getDate() - now.getDay());
+  startOfWeek.setHours(0, 0, 0, 0);
+
+  Object.entries(currentDailyLogs).forEach(([dateStr, ms]) => {
+    const logDate = new Date(dateStr);
+    
+    // Monthly total
+    if (logDate.getMonth() === currentMonth && logDate.getFullYear() === currentYear) {
+      monthlyTotal += ms;
+    }
+
+    // Weekly total
+    if (logDate >= startOfWeek && logDate <= now) {
+      weeklyTotal += ms;
+    }
+
+    // For average
+    totalLogs += ms;
+    daysWithData++;
+  });
+
+  const formatShortTime = (ms) => {
+    const hours = Math.floor(ms / (1000 * 60 * 60));
+    const minutes = Math.floor((ms / (1000 * 60)) % 60);
+    return `${hours}h ${minutes}m`;
+  };
+
+  document.getElementById('statWeekly').textContent = formatShortTime(weeklyTotal);
+  document.getElementById('statMonthly').textContent = formatShortTime(monthlyTotal);
+  document.getElementById('statAverage').textContent = daysWithData > 0 ? formatShortTime(totalLogs / daysWithData) : '0h 0m';
+}
+
+historyToggleBtn.addEventListener('click', () => {
+  const isHidden = historyPanel.classList.toggle('hidden');
+  historyToggleBtn.textContent = isHidden ? 'View History' : 'Hide History';
+  if (!isHidden) {
+    renderCalendar();
+  }
+});
+
+prevMonthBtn.addEventListener('click', () => {
+  calendarDate.setMonth(calendarDate.getMonth() - 1);
+  renderCalendar();
+});
+
+nextMonthBtn.addEventListener('click', () => {
+  calendarDate.setMonth(calendarDate.getMonth() + 1);
+  renderCalendar();
+});
 
 startStopBtn.addEventListener('click', () => {
   if (isRunning) {
@@ -85,3 +220,4 @@ updateUI();
 
 // Sync every second
 setInterval(updateUI, 1000);
+

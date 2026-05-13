@@ -31,11 +31,48 @@
     <button id="resetBtn" class="btn">Reset</button>
   </div>
 
+  <div class="secondary-controls">
+    <button id="historyToggleBtn" class="btn-text">View History</button>
+  </div>
+
+  <div id="historyPanel" class="history-panel hidden">
+    <div class="calendar-header">
+      <button id="prevMonth" class="nav-btn">&lt;</button>
+      <h2 id="currentMonthYear">May 2024</h2>
+      <button id="nextMonth" class="nav-btn">&gt;</button>
+    </div>
+    <div class="calendar-grid-header">
+      <span>Sun</span><span>Mon</span><span>Tue</span><span>Wed</span><span>Thu</span><span>Fri</span><span>Sat</span>
+    </div>
+    <div id="calendarGrid" class="calendar-grid"></div>
+    
+    <div class="stats-container">
+      <div class="stat-item">
+        <span class="stat-label">This Week</span>
+        <span id="statWeekly" class="stat-value">0h 0m</span>
+      </div>
+      <div class="stat-item">
+        <span class="stat-label">This Month</span>
+        <span id="statMonthly" class="stat-value">0h 0m</span>
+      </div>
+      <div class="stat-item">
+        <span class="stat-label">Daily Avg</span>
+        <span id="statAverage" class="stat-value">0h 0m</span>
+      </div>
+    </div>
+
+    <div id="dayDetails" class="day-details">
+      <p id="detailsDate">Select a date</p>
+      <p id="detailsTime">00:00:00</p>
+    </div>
+  </div>
+
   <div class="status-indicator">
     <div id="statusDot" class="dot"></div>
     <span id="statusText">Inactive</span>
   </div>
 
   <script src="popup.js"></script>
+
 </body>
 </html>

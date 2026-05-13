@@ -3,7 +3,7 @@
   "name": "Sleek Stopwatch",
   "version": "1.0",
   "description": "A professional, minimalist stopwatch for your browser.",
-  "permissions": ["storage", "alarms"],
+  "permissions": ["storage", "alarms", "notifications"],
   "action": {
     "default_popup": "popup.html",
     "default_icon": {
