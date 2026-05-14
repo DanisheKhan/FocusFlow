@@ -32,10 +32,13 @@ function checkMidnightReset() {
         const endOfPreviousDay = new Date(sessionStartDate);
         endOfPreviousDay.setHours(23, 59, 59, 999);
         const durationForOldDay = endOfPreviousDay.getTime() - startTime;
+        
+        // Record the portion belonging to the old day
         recordWorkedTime(durationForOldDay, sessionStartDate);
         
-        // Restart session from midnight today
+        // Reset for the new day
         startTime = new Date().setHours(0, 0, 0, 0);
+        elapsedTime = 0; // Clear accumulated time from yesterday
       }
     } else {
       // Not running, just reset the counter for the new day
@@ -46,8 +49,21 @@ function checkMidnightReset() {
     lastRecordedDate = today;
     reminderDisabledUntil = 0;
     chrome.storage.local.set({ elapsedTime, startTime, lastRecordedDate, reminderDisabledUntil });
+    
+    // Update badge immediately if running
+    if (isRunning) {
+      updateBadge();
+    }
   }
 }
+
+// Add an alarm to ensure midnight reset happens even if background is idle
+chrome.alarms.create('daily-reset-check', { periodInMinutes: 1 });
+chrome.alarms.onAlarm.addListener((alarm) => {
+  if (alarm.name === 'daily-reset-check') {
+    checkMidnightReset();
+  }
+});
 
 function formatTime(ms) {
   const seconds = Math.floor((ms / 1000) % 60);
