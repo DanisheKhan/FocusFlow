@@ -3,7 +3,12 @@ let startTime = 0;
 let elapsedTime = 0;
 let isRunning = false;
 let dailyLogs = {};
-let lastRecordedDate = new Date().toLocaleDateString('en-CA');
+function getTodayDate() {
+  const d = new Date();
+  return `${d.getFullYear()}-${(d.getMonth() + 1).toString().padStart(2, '0')}-${d.getDate().toString().padStart(2, '0')}`;
+}
+
+let lastRecordedDate = getTodayDate();
 
 // Initialize state from storage
 chrome.storage.local.get(['startTime', 'elapsedTime', 'isRunning', 'dailyLogs', 'lastRecordedDate', 'reminderDisabledUntil'], (result) => {
@@ -11,7 +16,7 @@ chrome.storage.local.get(['startTime', 'elapsedTime', 'isRunning', 'dailyLogs', 
   elapsedTime = result.elapsedTime || 0;
   isRunning = result.isRunning || false;
   dailyLogs = result.dailyLogs || {};
-  lastRecordedDate = result.lastRecordedDate || new Date().toLocaleDateString('en-CA');
+  lastRecordedDate = result.lastRecordedDate || getTodayDate();
   reminderDisabledUntil = result.reminderDisabledUntil || 0;
 
   checkMidnightReset();
@@ -22,7 +27,7 @@ chrome.storage.local.get(['startTime', 'elapsedTime', 'isRunning', 'dailyLogs', 
 });
 
 function checkMidnightReset() {
-  const today = new Date().toLocaleDateString('en-CA');
+  const today = getTodayDate();
   if (today !== lastRecordedDate) {
     // It's a new day! 
     if (isRunning) {
@@ -110,7 +115,7 @@ function updateBadge() {
 }
 
 function recordWorkedTime(ms, date = null) {
-  const targetDate = date || new Date().toLocaleDateString('en-CA');
+  const targetDate = date || getTodayDate();
   dailyLogs[targetDate] = (dailyLogs[targetDate] || 0) + ms;
   chrome.storage.local.set({ dailyLogs });
 }
@@ -128,7 +133,6 @@ function stopBadgeUpdate() {
 }
 
 let lastReminderTime = 0;
-let reminderDisabledUntil = 0;
 const REMINDER_COOLDOWN = 60 * 60 * 1000; // 1 hour
 
 function showReminder() {
@@ -190,8 +194,13 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   } else if (message.type === 'GET_STATUS') {
     const currentElapsed = isRunning ? (Date.now() - startTime + elapsedTime) : elapsedTime;
     sendResponse({ isRunning, elapsedTime: currentElapsed, dailyLogs, startTime });
-  } else if (message.type === 'GET_LOGS') {
-    sendResponse({ dailyLogs });
+  } else if (message.type === 'RESET') {
+    isRunning = false;
+    elapsedTime = 0;
+    startTime = 0;
+    chrome.storage.local.set({ isRunning, elapsedTime, startTime });
+    stopBadgeUpdate();
+    sendResponse({ success: true });
   }
   return true;
 });

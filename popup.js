@@ -1,3 +1,8 @@
+function getTodayDate() {
+  const d = new Date();
+  return `${d.getFullYear()}-${(d.getMonth() + 1).toString().padStart(2, '0')}-${d.getDate().toString().padStart(2, '0')}`;
+}
+
 let isRunning = false;
 let displayTime = 0;
 let sessionStartTime = 0;
@@ -111,7 +116,7 @@ function renderCalendar() {
   const firstDay = new Date(year, month, 1).getDay();
   const daysInMonth = new Date(year, month + 1, 0).getDate();
   
-  const today = new Date().toLocaleDateString('en-CA');
+  const today = getTodayDate();
   
   // Empty slots for previous month days
   for (let i = 0; i < firstDay; i++) {
@@ -162,7 +167,7 @@ function renderCalendar() {
 
 function updateStatistics() {
   const now = new Date();
-  const todayStr = now.toLocaleDateString('en-CA');
+  const todayStr = getTodayDate();
   
   let weeklyTotal = 0;
   let monthlyTotal = 0;
@@ -231,6 +236,13 @@ startStopBtn.addEventListener('click', () => {
     chrome.runtime.sendMessage({ type: 'STOP' }, updateUI);
   } else {
     chrome.runtime.sendMessage({ type: 'START' }, updateUI);
+  }
+});
+
+const resetBtn = document.getElementById('resetBtn');
+resetBtn.addEventListener('click', () => {
+  if (confirm('Are you sure you want to reset today\'s time? This will not affect your history.')) {
+    chrome.runtime.sendMessage({ type: 'RESET' }, updateUI);
   }
 });
 
