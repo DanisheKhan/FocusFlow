@@ -225,16 +225,21 @@ chrome.idle.onStateChanged.addListener((newState) => {
     if (isRunning) {
       isRunning = false;
       
-      // Calculate how much to record. Since chrome.idle triggers AFTER the interval,
-      // the last activity was IDLE_THRESHOLD seconds ago.
-      // We pause the timer and subtract the idle time from the current session 
-      // to keep the log accurate to actual working time.
       const now = Date.now();
-      const idleTimeMs = IDLE_THRESHOLD * 1000;
       const sessionDurationSinceStart = now - startTime;
       
-      // Only record the active part (total session minus the 15 mins of inactivity)
-      const activeDuration = Math.max(0, sessionDurationSinceStart - idleTimeMs);
+      let activeDuration;
+      
+      if (newState === 'idle') {
+        // If it triggered 'idle', there was exactly 15 minutes of continuous inactivity.
+        // We subtract the 15 minutes so the idle time isn't counted as work.
+        const idleTimeMs = 900 * 1000;
+        activeDuration = Math.max(0, sessionDurationSinceStart - idleTimeMs);
+      } else {
+        // If it triggered 'locked', the machine was locked or put to sleep.
+        // This happens instantly (e.g. closing the lid), so we DO NOT subtract 15 minutes.
+        activeDuration = sessionDurationSinceStart;
+      }
       
       elapsedTime += activeDuration;
       recordWorkedTime(activeDuration);
@@ -246,14 +251,14 @@ chrome.idle.onStateChanged.addListener((newState) => {
         type: 'basic',
         iconUrl: 'icons/logo.png',
         title: 'Focus Flow: Auto-Paused',
-        message: 'The stopwatch was paused because of 15 minutes of inactivity.',
+        message: newState === 'idle' 
+          ? 'The stopwatch was paused after 15 minutes of inactivity.'
+          : 'The stopwatch was paused because the system was locked.',
         priority: 1
       });
 
       // Update any open popups
-      chrome.runtime.sendMessage({ type: 'STATE_UPDATED' }).catch(() => {
-        // Ignore error if popup is not open
-      });
+      chrome.runtime.sendMessage({ type: 'STATE_UPDATED' }).catch(() => {});
     }
   }
 });
