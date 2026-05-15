@@ -205,3 +205,46 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   return true;
 });
 
+// --- Auto-Pause Logic ---
+const IDLE_THRESHOLD = 900; // 15 minutes in seconds
+chrome.idle.setDetectionInterval(IDLE_THRESHOLD);
+
+chrome.idle.onStateChanged.addListener((newState) => {
+  if (newState === 'idle' || newState === 'locked') {
+    if (isRunning) {
+      isRunning = false;
+      
+      // Calculate how much to record. Since chrome.idle triggers AFTER the interval,
+      // the last activity was IDLE_THRESHOLD seconds ago.
+      // We pause the timer and subtract the idle time from the current session 
+      // to keep the log accurate to actual working time.
+      const now = Date.now();
+      const idleTimeMs = IDLE_THRESHOLD * 1000;
+      const sessionDurationSinceStart = now - startTime;
+      
+      // Only record the active part (total session minus the 15 mins of inactivity)
+      const activeDuration = Math.max(0, sessionDurationSinceStart - idleTimeMs);
+      
+      elapsedTime += activeDuration;
+      recordWorkedTime(activeDuration);
+      
+      chrome.storage.local.set({ isRunning, elapsedTime });
+      stopBadgeUpdate();
+
+      chrome.notifications.create('auto-pause-notification', {
+        type: 'basic',
+        iconUrl: 'icons/logo.png',
+        title: 'Focus Flow: Auto-Paused',
+        message: 'The stopwatch was paused because of 15 minutes of inactivity.',
+        priority: 1
+      });
+
+      // Update any open popups
+      chrome.runtime.sendMessage({ type: 'STATE_UPDATED' }).catch(() => {
+        // Ignore error if popup is not open
+      });
+    }
+  }
+});
+
+

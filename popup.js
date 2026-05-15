@@ -252,3 +252,9 @@ updateUI();
 // Sync every second
 setInterval(updateUI, 1000);
 
+chrome.runtime.onMessage.addListener((message) => {
+  if (message.type === 'STATE_UPDATED') {
+    updateUI();
+  }
+});
+
