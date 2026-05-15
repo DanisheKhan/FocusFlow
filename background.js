@@ -9,21 +9,25 @@ function getTodayDate() {
 }
 
 let lastRecordedDate = getTodayDate();
+let reminderDisabledUntil = 0;
 
 // Initialize state from storage
-chrome.storage.local.get(['startTime', 'elapsedTime', 'isRunning', 'dailyLogs', 'lastRecordedDate', 'reminderDisabledUntil'], (result) => {
-  startTime = result.startTime || 0;
-  elapsedTime = result.elapsedTime || 0;
-  isRunning = result.isRunning || false;
-  dailyLogs = result.dailyLogs || {};
-  lastRecordedDate = result.lastRecordedDate || getTodayDate();
-  reminderDisabledUntil = result.reminderDisabledUntil || 0;
+let storageLoadedPromise = new Promise((resolve) => {
+  chrome.storage.local.get(['startTime', 'elapsedTime', 'isRunning', 'dailyLogs', 'lastRecordedDate', 'reminderDisabledUntil'], (result) => {
+    startTime = result.startTime || 0;
+    elapsedTime = result.elapsedTime || 0;
+    isRunning = result.isRunning || false;
+    dailyLogs = result.dailyLogs || {};
+    lastRecordedDate = result.lastRecordedDate || getTodayDate();
+    reminderDisabledUntil = result.reminderDisabledUntil || 0;
 
-  checkMidnightReset();
+    checkMidnightReset();
 
-  if (isRunning) {
-    startBadgeUpdate();
-  }
+    if (isRunning) {
+      startBadgeUpdate();
+    }
+    resolve();
+  });
 });
 
 function checkMidnightReset() {
@@ -32,19 +36,20 @@ function checkMidnightReset() {
     // It's a new day! 
     if (isRunning) {
       // Split the current session: previous day part goes to logs
-      const sessionStartDate = new Date(startTime).toLocaleDateString('en-CA');
-      if (sessionStartDate !== today) {
-        const endOfPreviousDay = new Date(sessionStartDate);
-        endOfPreviousDay.setHours(23, 59, 59, 999);
-        const durationForOldDay = endOfPreviousDay.getTime() - startTime;
-        
-        // Record the portion belonging to the old day
-        recordWorkedTime(durationForOldDay, sessionStartDate);
-        
-        // Reset for the new day
-        startTime = new Date().setHours(0, 0, 0, 0);
-        elapsedTime = 0; // Clear accumulated time from yesterday
+      const endOfPreviousDay = new Date();
+      endOfPreviousDay.setHours(0, 0, 0, 0); // Midnight of TODAY
+      
+      const durationForOldDay = endOfPreviousDay.getTime() - startTime;
+      
+      if (durationForOldDay > 0) {
+        recordWorkedTime(durationForOldDay, lastRecordedDate);
       }
+      
+      // Stop the timer, reset clock to zero for the new day
+      isRunning = false;
+      startTime = 0;
+      elapsedTime = 0; 
+      stopBadgeUpdate();
     } else {
       // Not running, just reset the counter for the new day
       elapsedTime = 0;
@@ -53,11 +58,13 @@ function checkMidnightReset() {
     
     lastRecordedDate = today;
     reminderDisabledUntil = 0;
-    chrome.storage.local.set({ elapsedTime, startTime, lastRecordedDate, reminderDisabledUntil });
+    chrome.storage.local.set({ isRunning, elapsedTime, startTime, lastRecordedDate, reminderDisabledUntil });
     
     // Update badge immediately if running
     if (isRunning) {
       updateBadge();
+    } else {
+      chrome.runtime.sendMessage({ type: 'STATE_UPDATED' }).catch(() => {});
     }
   }
 }
@@ -172,36 +179,40 @@ chrome.runtime.onStartup.addListener(() => {
 });
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
-  checkMidnightReset();
+  storageLoadedPromise.then(() => {
+    checkMidnightReset();
 
-  if (message.type === 'START') {
-    if (!isRunning) {
-      isRunning = true;
-      startTime = Date.now();
-      chrome.storage.local.set({ isRunning, startTime });
-      startBadgeUpdate();
-      chrome.notifications.clear('start-reminder');
-    }
-  } else if (message.type === 'STOP') {
-    if (isRunning) {
+    if (message.type === 'START') {
+      if (!isRunning) {
+        isRunning = true;
+        startTime = Date.now();
+        chrome.storage.local.set({ isRunning, startTime });
+        startBadgeUpdate();
+        chrome.notifications.clear('start-reminder');
+      }
+      sendResponse({ success: true });
+    } else if (message.type === 'STOP') {
+      if (isRunning) {
+        isRunning = false;
+        const sessionDuration = Date.now() - startTime;
+        elapsedTime += sessionDuration;
+        recordWorkedTime(sessionDuration);
+        chrome.storage.local.set({ isRunning, elapsedTime });
+        stopBadgeUpdate();
+      }
+      sendResponse({ success: true });
+    } else if (message.type === 'GET_STATUS') {
+      const currentElapsed = isRunning ? (Date.now() - startTime + elapsedTime) : elapsedTime;
+      sendResponse({ isRunning, elapsedTime: currentElapsed, dailyLogs, startTime });
+    } else if (message.type === 'RESET') {
       isRunning = false;
-      const sessionDuration = Date.now() - startTime;
-      elapsedTime += sessionDuration;
-      recordWorkedTime(sessionDuration);
-      chrome.storage.local.set({ isRunning, elapsedTime });
+      elapsedTime = 0;
+      startTime = 0;
+      chrome.storage.local.set({ isRunning, elapsedTime, startTime });
       stopBadgeUpdate();
+      sendResponse({ success: true });
     }
-  } else if (message.type === 'GET_STATUS') {
-    const currentElapsed = isRunning ? (Date.now() - startTime + elapsedTime) : elapsedTime;
-    sendResponse({ isRunning, elapsedTime: currentElapsed, dailyLogs, startTime });
-  } else if (message.type === 'RESET') {
-    isRunning = false;
-    elapsedTime = 0;
-    startTime = 0;
-    chrome.storage.local.set({ isRunning, elapsedTime, startTime });
-    stopBadgeUpdate();
-    sendResponse({ success: true });
-  }
+  });
   return true;
 });
 
