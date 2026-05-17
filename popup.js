@@ -41,6 +41,7 @@ const barNight = document.getElementById('barNight');
 const dailyGoalInput = document.getElementById('dailyGoalInput');
 const ratioWork = document.getElementById('ratioWork');
 const ratioBreak = document.getElementById('ratioBreak');
+const ratioText = document.getElementById('ratioText');
 const currentTimeEl = document.getElementById('currentTime');
 
 dailyGoalInput.addEventListener('change', (e) => {
@@ -220,13 +221,15 @@ function renderHeatmap() {
       const breakMs = currentDailyBreaks[dateStr] || 0;
       const totalTime = liveTime + breakMs;
       if (totalTime > 0) {
-        const workPerc = (liveTime / totalTime) * 100;
-        const breakPerc = (breakMs / totalTime) * 100;
+        const workPerc = Math.round((liveTime / totalTime) * 100);
+        const breakPerc = Math.round((breakMs / totalTime) * 100);
         ratioWork.style.width = `${workPerc}%`;
         ratioBreak.style.width = `${breakPerc}%`;
+        ratioText.innerHTML = `<span style="color: var(--accent-color)">${workPerc}% Work</span> &bull; <span style="color: var(--break-color)">${breakPerc}% Break</span>`;
       } else {
         ratioWork.style.width = `0%`;
         ratioBreak.style.width = `0%`;
+        ratioText.innerHTML = `-`;
       }
       
       if (hours === 0) {
@@ -234,11 +237,15 @@ function renderHeatmap() {
         detailsBreakdownEl.textContent = 'No activity recorded.';
       } else {
         let baseScore = Math.min((hours / (currentDailyGoalMs / 3600000)) * 80, 80);
-        let deductions = (pauses.manual * 2) + (pauses.idle * 5);
-        let finalScore = Math.max(1, Math.round(baseScore + 20 - deductions));
+        let manualDed = pauses.manual * 2;
+        let idleDed = pauses.idle * 5;
+        let finalScore = Math.max(1, Math.round(baseScore + 20 - manualDed - idleDed));
         
-        detailsScoreEl.textContent = finalScore;
-        detailsBreakdownEl.innerHTML = `${hours.toFixed(1)}h worked &bull; ${pauses.manual} manual pauses &bull; ${pauses.idle} idle interruptions`;
+        detailsScoreEl.textContent = `${finalScore} / 100`;
+        detailsBreakdownEl.innerHTML = `
+          ${hours.toFixed(1)}h worked toward daily goal.<br>
+          Deductions: -${manualDed} pts (${pauses.manual} pauses) &bull; -${idleDed} pts (${pauses.idle} idle)
+        `;
       }
     });
     
