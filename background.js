@@ -392,19 +392,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   return true;
 });
 
-chrome.commands.onCommand.addListener((command) => {
-  if (command === 'toggle-timer') {
-    storageLoadedPromise.then(() => {
-      checkMidnightReset();
-      if (isRunning) {
-        doStopTimer(true);
-      } else {
-        doStartTimer();
-      }
-      chrome.runtime.sendMessage({ type: 'STATE_UPDATED' }).catch(() => {});
-    });
-  }
-});
+// Shortcut to open popup is handled automatically by Chrome via _execute_action in manifest.json
 
 // --- Auto-Pause Logic ---
 const IDLE_THRESHOLD = 900; // 15 minutes in seconds

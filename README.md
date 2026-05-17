@@ -22,8 +22,7 @@ Focus Flow is a premium, minimalist Chrome extension designed to help you track 
   - Pauses instantly if you lock your machine or put it to sleep.
   - Automatically resumes tracking exactly where you left off when you wake up your laptop.
 - **Smarter Midnight Rollover (Session Split Detection)**: Automatically splits your work sessions right at midnight, logging your late-night sessions accurately across two separate days without you having to restart the timer.
-- **Weekly Report Notifications**: Every Sunday evening, receive a summary notification detailing your total hours and daily average for the week.
-- **Keyboard Shortcut**: Use `Alt+Shift+S` (or `Cmd+Shift+S` on Mac) to quickly Start and Stop the timer without opening the popup!
+- **Keyboard Shortcut**: Use `Alt+T` (or `Cmd+T` on Mac) to quickly open the Focus Flow popup anywhere in Chrome!
 
 ## 🚀 Installation
 

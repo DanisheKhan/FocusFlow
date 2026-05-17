@@ -21,12 +21,12 @@
     "128": "icons/logo.png"
   },
   "commands": {
-    "toggle-timer": {
+    "_execute_action": {
       "suggested_key": {
-        "default": "Alt+Shift+S",
-        "mac": "Command+Shift+S"
+        "default": "Alt+T",
+        "mac": "Command+T"
       },
-      "description": "Toggle Focus Flow timer"
+      "description": "Open Focus Flow"
     }
   }
 }

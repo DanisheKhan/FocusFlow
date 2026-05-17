@@ -47,13 +47,28 @@ body {
   height: 52px;
 }
 
+header {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  margin-bottom: 24px;
+}
+
 header h1 {
   font-size: 0.65rem;
   font-weight: 800;
   color: var(--text-muted);
   text-transform: uppercase;
   letter-spacing: 0.4em;
-  margin-bottom: 24px;
+}
+
+.current-time {
+  font-size: 0.9rem;
+  font-weight: 700;
+  color: var(--text-main);
+  font-family: 'Inter', sans-serif;
+  letter-spacing: 0.05em;
 }
 
 .display-container {

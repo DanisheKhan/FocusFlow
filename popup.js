@@ -41,6 +41,7 @@ const barNight = document.getElementById('barNight');
 const dailyGoalInput = document.getElementById('dailyGoalInput');
 const ratioWork = document.getElementById('ratioWork');
 const ratioBreak = document.getElementById('ratioBreak');
+const currentTimeEl = document.getElementById('currentTime');
 
 dailyGoalInput.addEventListener('change', (e) => {
   const val = parseFloat(e.target.value);
@@ -67,6 +68,15 @@ function formatMs(ms) {
 }
 
 function updateUI() {
+  if (currentTimeEl) {
+    const now = new Date();
+    const h = now.getHours();
+    const m = now.getMinutes();
+    const ampm = h >= 12 ? 'PM' : 'AM';
+    const h12 = h % 12 || 12;
+    currentTimeEl.textContent = `${h12}:${m.toString().padStart(2, '0')} ${ampm}`;
+  }
+
   chrome.runtime.sendMessage({ type: 'GET_STATUS' }, (response) => {
     if (response) {
       isRunning = response.isRunning;
