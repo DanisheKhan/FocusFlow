@@ -17,17 +17,23 @@
   </header>
   
   <div class="display-container glass">
-    <div class="status-indicator">
-      <div id="statusDot" class="dot"></div>
-      <span id="statusText">Inactive</span>
+    <svg class="progress-svg" viewBox="0 0 240 240">
+      <circle class="progress-bg" cx="120" cy="120" r="110"></circle>
+      <circle id="progressValue" class="progress-value" cx="120" cy="120" r="110"></circle>
+    </svg>
+    <div class="display-content">
+      <div class="status-indicator">
+        <div id="statusDot" class="dot"></div>
+        <span id="statusText">Inactive</span>
+      </div>
+      <div class="time-labels">
+        <span>HR</span>
+        <span>MIN</span>
+        <span>SEC</span>
+      </div>
+      <div id="display" class="time-display">00:00:00</div>
+      <div class="milliseconds">.00</div>
     </div>
-    <div class="time-labels">
-      <span>HR</span>
-      <span>MIN</span>
-      <span>SEC</span>
-    </div>
-    <div id="display" class="time-display">00:00:00</div>
-    <div class="milliseconds">.00</div>
   </div>
 
   <div class="controls">
@@ -40,15 +46,13 @@
   </div>
 
   <div id="historyPanel" class="history-panel glass hidden">
-    <div class="calendar-header">
-      <button id="prevMonth" class="nav-btn">&lt;</button>
-      <h2 id="currentMonthYear">May 2024</h2>
-      <button id="nextMonth" class="nav-btn">&gt;</button>
+    <div class="heatmap-header">
+      <h2>Activity Heatmap</h2>
+      <span class="heatmap-year" id="heatmapYear">Last 365 Days</span>
     </div>
-    <div class="calendar-grid-header">
-      <span>Sun</span><span>Mon</span><span>Tue</span><span>Wed</span><span>Thu</span><span>Fri</span><span>Sat</span>
+    <div class="heatmap-wrapper">
+      <div id="heatmapGrid" class="heatmap-grid"></div>
     </div>
-    <div id="calendarGrid" class="calendar-grid"></div>
     
     <div class="stats-container">
       <div class="stat-item">
@@ -68,6 +72,11 @@
     <div id="dayDetails" class="day-details">
       <p id="detailsDate">Select a date</p>
       <p id="detailsTime">00:00:00</p>
+      <div class="score-container">
+        <span class="score-label">Focus Score</span>
+        <span id="detailsScore" class="score-value">-</span>
+      </div>
+      <p id="detailsBreakdown" class="score-breakdown"></p>
     </div>
   </div>
 

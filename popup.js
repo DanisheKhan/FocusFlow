@@ -8,7 +8,8 @@ let displayTime = 0;
 let sessionStartTime = 0;
 let animationFrameId = null;
 let currentDailyLogs = {};
-let calendarDate = new Date();
+let currentDailyPauses = {};
+let currentDailyGoalMs = 8 * 60 * 60 * 1000;
 
 const displayEl = document.getElementById('display');
 const msEl = document.querySelector('.milliseconds');
@@ -17,12 +18,12 @@ const statusText = document.getElementById('statusText');
 const statusDot = document.getElementById('statusDot');
 const historyToggleBtn = document.getElementById('historyToggleBtn');
 const historyPanel = document.getElementById('historyPanel');
-const calendarGrid = document.getElementById('calendarGrid');
-const currentMonthYearEl = document.getElementById('currentMonthYear');
-const prevMonthBtn = document.getElementById('prevMonth');
-const nextMonthBtn = document.getElementById('nextMonth');
+const heatmapGrid = document.getElementById('heatmapGrid');
 const detailsDateEl = document.getElementById('detailsDate');
 const detailsTimeEl = document.getElementById('detailsTime');
+const detailsScoreEl = document.getElementById('detailsScore');
+const detailsBreakdownEl = document.getElementById('detailsBreakdown');
+const progressValueEl = document.getElementById('progressValue');
 
 function formatTime(ms) {
   const seconds = Math.floor((ms / 1000) % 60);
@@ -47,6 +48,8 @@ function updateUI() {
       isRunning = response.isRunning;
       displayTime = response.elapsedTime;
       sessionStartTime = response.startTime;
+      currentDailyGoalMs = response.dailyGoalMs || 8 * 3600000;
+      currentDailyPauses = response.dailyPauses || {};
       
       // Update body state for global animations
       if (isRunning) {
@@ -65,12 +68,17 @@ function updateUI() {
       if (JSON.stringify(currentDailyLogs) !== JSON.stringify(response.dailyLogs)) {
         currentDailyLogs = response.dailyLogs || {};
         if (!historyPanel.classList.contains('hidden')) {
-          renderCalendar();
+          renderHeatmap();
         }
       }
       
       displayEl.textContent = formatTime(displayTime);
       msEl.textContent = formatMs(displayTime);
+      
+      const progressRatio = Math.min(displayTime / currentDailyGoalMs, 1);
+      if (progressValueEl) {
+        progressValueEl.style.strokeDashoffset = 691 - (progressRatio * 691);
+      }
       
       if (isRunning) {
         statusText.textContent = 'Running';
@@ -97,6 +105,10 @@ function startAnimation() {
       if (response && response.isRunning) {
         displayEl.textContent = formatTime(response.elapsedTime);
         msEl.textContent = formatMs(response.elapsedTime);
+        const progressRatio = Math.min(response.elapsedTime / currentDailyGoalMs, 1);
+        if (progressValueEl) {
+          progressValueEl.style.strokeDashoffset = 691 - (progressRatio * 691);
+        }
         animationFrameId = requestAnimationFrame(step);
       }
     });
@@ -104,63 +116,81 @@ function startAnimation() {
   animationFrameId = requestAnimationFrame(step);
 }
 
-// Calendar Logic
-function renderCalendar() {
-  const year = calendarDate.getFullYear();
-  const month = calendarDate.getMonth();
+// Heatmap Logic
+function renderHeatmap() {
+  heatmapGrid.innerHTML = '';
+  const todayDate = new Date();
+  const startDate = new Date();
+  startDate.setDate(todayDate.getDate() - 364);
   
-  currentMonthYearEl.textContent = new Intl.DateTimeFormat('en-US', { month: 'long', year: 'numeric' }).format(calendarDate);
+  const todayStr = getTodayDate();
   
-  calendarGrid.innerHTML = '';
-  
-  const firstDay = new Date(year, month, 1).getDay();
-  const daysInMonth = new Date(year, month + 1, 0).getDate();
-  
-  const today = getTodayDate();
-  
-  // Empty slots for previous month days
-  for (let i = 0; i < firstDay; i++) {
+  for (let i = 0; i < startDate.getDay(); i++) {
     const emptyDiv = document.createElement('div');
-    emptyDiv.classList.add('calendar-day', 'empty');
-    calendarGrid.appendChild(emptyDiv);
+    emptyDiv.style.visibility = 'hidden';
+    heatmapGrid.appendChild(emptyDiv);
   }
   
-  for (let day = 1; day <= daysInMonth; day++) {
-    const dayDiv = document.createElement('div');
-    dayDiv.classList.add('calendar-day');
-    dayDiv.textContent = day;
+  for (let i = 0; i <= 364; i++) {
+    const d = new Date(startDate);
+    d.setDate(startDate.getDate() + i);
+    const dateStr = `${d.getFullYear()}-${(d.getMonth() + 1).toString().padStart(2, '0')}-${d.getDate().toString().padStart(2, '0')}`;
     
-    const dateStr = `${year}-${(month + 1).toString().padStart(2, '0')}-${day.toString().padStart(2, '0')}`;
+    const cell = document.createElement('div');
+    cell.classList.add('heatmap-cell');
     
-    // Check if day has data or is currently active
-    const hasStoredData = currentDailyLogs[dateStr] > 0;
-    const isActiveToday = (dateStr === today && isRunning);
-    
-    if (hasStoredData || isActiveToday) {
-      dayDiv.classList.add('has-data');
+    let timeMs = currentDailyLogs[dateStr] || 0;
+    if (dateStr === todayStr && isRunning && sessionStartTime) {
+      timeMs += (Date.now() - sessionStartTime);
     }
     
-    if (dateStr === today) {
-      dayDiv.classList.add('today');
+    if (timeMs > 0) {
+      const hours = timeMs / 3600000;
+      if (hours < 2) cell.classList.add('heatmap-level-1');
+      else if (hours < 5) cell.classList.add('heatmap-level-2');
+      else if (hours < 8) cell.classList.add('heatmap-level-3');
+      else cell.classList.add('heatmap-level-4');
     }
     
-    dayDiv.addEventListener('click', () => {
-      // Deselect others
-      document.querySelectorAll('.calendar-day').forEach(el => el.classList.remove('selected'));
-      dayDiv.classList.add('selected');
+    if (dateStr === todayStr) {
+      cell.classList.add('today');
+      // pre-select today
+      setTimeout(() => cell.click(), 10);
+    }
+    
+    cell.addEventListener('click', () => {
+      document.querySelectorAll('.heatmap-cell').forEach(el => el.classList.remove('selected'));
+      cell.classList.add('selected');
       
-      let timeMs = currentDailyLogs[dateStr] || 0;
-      // If it's today and running, add the live session duration
-      if (dateStr === today && isRunning && sessionStartTime) {
-        timeMs += (Date.now() - sessionStartTime);
+      let liveTime = currentDailyLogs[dateStr] || 0;
+      if (dateStr === todayStr && isRunning && sessionStartTime) {
+        liveTime += (Date.now() - sessionStartTime);
       }
       
-      detailsDateEl.textContent = new Date(dateStr).toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
-      detailsTimeEl.textContent = formatTime(timeMs);
+      detailsDateEl.textContent = d.toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'short', day: 'numeric' });
+      detailsTimeEl.textContent = formatTime(liveTime);
+      
+      const pauses = currentDailyPauses[dateStr] || { manual: 0, idle: 0 };
+      const hours = liveTime / 3600000;
+      if (hours === 0) {
+        detailsScoreEl.textContent = '-';
+        detailsBreakdownEl.textContent = 'No activity recorded.';
+      } else {
+        let baseScore = Math.min((hours / (currentDailyGoalMs / 3600000)) * 80, 80);
+        let deductions = (pauses.manual * 2) + (pauses.idle * 5);
+        let finalScore = Math.max(1, Math.round(baseScore + 20 - deductions));
+        
+        detailsScoreEl.textContent = finalScore;
+        detailsBreakdownEl.innerHTML = `${hours.toFixed(1)}h worked &bull; ${pauses.manual} manual pauses &bull; ${pauses.idle} idle interruptions`;
+      }
     });
     
-    calendarGrid.appendChild(dayDiv);
+    heatmapGrid.appendChild(cell);
   }
+  
+  // scroll to right
+  const wrapper = document.querySelector('.heatmap-wrapper');
+  if (wrapper) wrapper.scrollLeft = wrapper.scrollWidth;
   
   updateStatistics();
 }
@@ -216,19 +246,8 @@ historyToggleBtn.addEventListener('click', () => {
   document.body.classList.toggle('history-open', !isHidden);
   historyToggleBtn.textContent = isHidden ? 'View History' : 'Hide History';
   if (!isHidden) {
-    renderCalendar();
+    renderHeatmap();
   }
-});
-
-
-prevMonthBtn.addEventListener('click', () => {
-  calendarDate.setMonth(calendarDate.getMonth() - 1);
-  renderCalendar();
-});
-
-nextMonthBtn.addEventListener('click', () => {
-  calendarDate.setMonth(calendarDate.getMonth() + 1);
-  renderCalendar();
 });
 
 startStopBtn.addEventListener('click', () => {

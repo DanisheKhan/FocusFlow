@@ -3,6 +3,10 @@ let startTime = 0;
 let elapsedTime = 0;
 let isRunning = false;
 let dailyLogs = {};
+let dailyPauses = {};
+let dailyGoalMs = 8 * 60 * 60 * 1000;
+let lastWeeklyReportDate = '';
+
 function getTodayDate() {
   const d = new Date();
   return `${d.getFullYear()}-${(d.getMonth() + 1).toString().padStart(2, '0')}-${d.getDate().toString().padStart(2, '0')}`;
@@ -14,7 +18,7 @@ let wasAutoPaused = false;
 
 // Initialize state from storage
 let storageLoadedPromise = new Promise((resolve) => {
-  chrome.storage.local.get(['startTime', 'elapsedTime', 'isRunning', 'dailyLogs', 'lastRecordedDate', 'reminderDisabledUntil', 'wasAutoPaused'], (result) => {
+  chrome.storage.local.get(['startTime', 'elapsedTime', 'isRunning', 'dailyLogs', 'lastRecordedDate', 'reminderDisabledUntil', 'wasAutoPaused', 'dailyPauses', 'dailyGoalMs', 'lastWeeklyReportDate'], (result) => {
     startTime = result.startTime || 0;
     elapsedTime = result.elapsedTime || 0;
     isRunning = result.isRunning || false;
@@ -22,6 +26,9 @@ let storageLoadedPromise = new Promise((resolve) => {
     lastRecordedDate = result.lastRecordedDate || getTodayDate();
     reminderDisabledUntil = result.reminderDisabledUntil || 0;
     wasAutoPaused = result.wasAutoPaused || false;
+    dailyPauses = result.dailyPauses || {};
+    dailyGoalMs = result.dailyGoalMs || 8 * 60 * 60 * 1000;
+    lastWeeklyReportDate = result.lastWeeklyReportDate || '';
 
     checkMidnightReset();
 
@@ -76,8 +83,52 @@ chrome.alarms.create('daily-reset-check', { periodInMinutes: 1 });
 chrome.alarms.onAlarm.addListener((alarm) => {
   if (alarm.name === 'daily-reset-check') {
     checkMidnightReset();
+    checkWeeklyReport();
   }
 });
+
+function checkWeeklyReport() {
+  const now = new Date();
+  if (now.getDay() === 0 && now.getHours() >= 18) { // Sunday 6 PM or later
+    const todayStr = getTodayDate();
+    if (lastWeeklyReportDate !== todayStr) {
+      sendWeeklyReport();
+      lastWeeklyReportDate = todayStr;
+      chrome.storage.local.set({ lastWeeklyReportDate });
+    }
+  }
+}
+
+function sendWeeklyReport() {
+  const now = new Date();
+  const startOfWeek = new Date(now);
+  startOfWeek.setDate(now.getDate() - now.getDay());
+  startOfWeek.setHours(0, 0, 0, 0);
+  
+  let totalMs = 0;
+  let bestDayMs = 0;
+  let daysWithData = 0;
+  
+  Object.entries(dailyLogs).forEach(([dateStr, ms]) => {
+    const logDate = new Date(dateStr);
+    if (logDate >= startOfWeek && logDate <= now) {
+      totalMs += ms;
+      if (ms > bestDayMs) bestDayMs = ms;
+      if (ms > 0) daysWithData++;
+    }
+  });
+  
+  const hours = (totalMs / (1000 * 60 * 60)).toFixed(1);
+  const avg = daysWithData > 0 ? (totalMs / daysWithData / (1000 * 60 * 60)).toFixed(1) : 0;
+  
+  chrome.notifications.create('weekly-report', {
+    type: 'basic',
+    iconUrl: 'icons/logo.png',
+    title: 'Focus Flow: Weekly Report',
+    message: `You worked ${hours}h this week! Avg: ${avg}h/day. Keep it up!`,
+    priority: 1
+  });
+}
 
 function formatTime(ms) {
   const seconds = Math.floor((ms / 1000) % 60);
@@ -127,6 +178,13 @@ function recordWorkedTime(ms, date = null) {
   const targetDate = date || getTodayDate();
   dailyLogs[targetDate] = (dailyLogs[targetDate] || 0) + ms;
   chrome.storage.local.set({ dailyLogs });
+}
+
+function recordPause(type, date = null) {
+  const targetDate = date || getTodayDate();
+  if (!dailyPauses[targetDate]) dailyPauses[targetDate] = { manual: 0, idle: 0 };
+  dailyPauses[targetDate][type] = (dailyPauses[targetDate][type] || 0) + 1;
+  chrome.storage.local.set({ dailyPauses });
 }
 
 function startBadgeUpdate() {
@@ -203,6 +261,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         const sessionDuration = Date.now() - startTime;
         elapsedTime += sessionDuration;
         recordWorkedTime(sessionDuration);
+        recordPause('manual');
         chrome.storage.local.set({ isRunning, elapsedTime, wasAutoPaused });
         stopBadgeUpdate();
       } else {
@@ -211,7 +270,11 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       sendResponse({ success: true });
     } else if (message.type === 'GET_STATUS') {
       const currentElapsed = isRunning ? (Date.now() - startTime + elapsedTime) : elapsedTime;
-      sendResponse({ isRunning, elapsedTime: currentElapsed, dailyLogs, startTime });
+      sendResponse({ isRunning, elapsedTime: currentElapsed, dailyLogs, dailyPauses, dailyGoalMs, startTime });
+    } else if (message.type === 'UPDATE_GOAL') {
+      dailyGoalMs = message.dailyGoalMs;
+      chrome.storage.local.set({ dailyGoalMs });
+      sendResponse({ success: true });
     } else if (message.type === 'RESET') {
       wasAutoPaused = false;
       isRunning = false;
@@ -253,6 +316,7 @@ chrome.idle.onStateChanged.addListener((newState) => {
         
         elapsedTime += activeDuration;
         recordWorkedTime(activeDuration);
+        recordPause('idle');
         
         wasAutoPaused = true;
         chrome.storage.local.set({ isRunning, elapsedTime, wasAutoPaused });
