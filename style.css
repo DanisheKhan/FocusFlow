@@ -439,3 +439,128 @@ body.isRunning .dot {
   background: var(--accent-color);
   box-shadow: 0 0 10px var(--accent-color);
 }
+
+.extra-stats-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 10px;
+  margin-top: 10px;
+  margin-bottom: 20px;
+}
+
+.stat-box {
+  background: rgba(255,255,255,0.02);
+  padding: 10px;
+  border-radius: 12px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+}
+
+.stat-box .stat-label {
+  font-size: 0.6rem;
+  margin-bottom: 4px;
+}
+
+.small-text {
+  font-size: 0.8rem;
+}
+
+.chart-container {
+  background: rgba(255,255,255,0.02);
+  padding: 12px;
+  border-radius: 12px;
+  margin-bottom: 20px;
+  text-align: center;
+}
+
+.chart-title {
+  font-size: 0.65rem;
+  font-weight: 700;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  display: block;
+  margin-bottom: 12px;
+}
+
+.bar-chart {
+  display: flex;
+  justify-content: space-around;
+  align-items: flex-end;
+  height: 60px;
+}
+
+.bar-wrapper {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-end;
+  height: 100%;
+}
+
+.bar {
+  width: 16px;
+  background: var(--accent-color);
+  border-radius: 4px 4px 0 0;
+  transition: height 0.5s ease;
+  min-height: 2px;
+}
+
+.bar-wrapper span {
+  font-size: 0.55rem;
+  color: var(--text-muted);
+  margin-top: 4px;
+}
+
+.settings-section {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 16px;
+  padding: 12px;
+  background: rgba(255,255,255,0.02);
+  border-radius: 12px;
+}
+
+.settings-label {
+  font-size: 0.7rem;
+  font-weight: 600;
+  color: var(--text-main);
+}
+
+.settings-input {
+  background: rgba(255,255,255,0.05);
+  border: 1px solid rgba(255,255,255,0.1);
+  color: #fff;
+  border-radius: 6px;
+  padding: 4px 8px;
+  width: 60px;
+  text-align: center;
+  font-family: 'Inter', sans-serif;
+  font-weight: 600;
+}
+
+.ratio-bar {
+  display: flex;
+  height: 6px;
+  border-radius: 3px;
+  background: rgba(255,255,255,0.1);
+  overflow: hidden;
+  margin-top: 10px;
+  margin-bottom: 4px;
+}
+
+.ratio-segment {
+  height: 100%;
+  transition: width 0.3s ease;
+}
+
+.ratio-segment.work {
+  background: var(--accent-color);
+}
+
+.ratio-segment.break {
+  background: rgba(255,255,255,0.3);
+}

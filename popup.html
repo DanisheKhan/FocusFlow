@@ -68,6 +68,40 @@
         <span id="statAverage" class="stat-value">0h 0m</span>
       </div>
     </div>
+    
+    <div class="extra-stats-grid">
+      <div class="stat-box">
+        <span class="stat-label">Best Day</span>
+        <span id="bestDayBadge" class="stat-value small-text">-</span>
+      </div>
+      <div class="stat-box">
+        <span class="stat-label">Worst Day</span>
+        <span id="worstDayBadge" class="stat-value small-text">-</span>
+      </div>
+      <div class="stat-box">
+        <span class="stat-label">Avg Start</span>
+        <span id="avgStartTime" class="stat-value small-text">-</span>
+      </div>
+      <div class="stat-box">
+        <span class="stat-label">Longest Session</span>
+        <span id="longestSessionTime" class="stat-value small-text">-</span>
+      </div>
+    </div>
+    
+    <div class="chart-container">
+      <span class="chart-title">Time of Day</span>
+      <div class="bar-chart" id="timeOfDayChart">
+        <div class="bar-wrapper"><div class="bar" id="barMorning"></div><span>Morn</span></div>
+        <div class="bar-wrapper"><div class="bar" id="barAfternoon"></div><span>Aft</span></div>
+        <div class="bar-wrapper"><div class="bar" id="barEvening"></div><span>Eve</span></div>
+        <div class="bar-wrapper"><div class="bar" id="barNight"></div><span>Ngt</span></div>
+      </div>
+    </div>
+    
+    <div class="settings-section">
+      <label class="settings-label" for="dailyGoalInput">Daily Goal (Hours)</label>
+      <input type="number" id="dailyGoalInput" class="settings-input" min="1" max="24" value="8">
+    </div>
 
     <div id="dayDetails" class="day-details">
       <p id="detailsDate">Select a date</p>
@@ -75,6 +109,10 @@
       <div class="score-container">
         <span class="score-label">Focus Score</span>
         <span id="detailsScore" class="score-value">-</span>
+      </div>
+      <div class="ratio-bar">
+        <div id="ratioWork" class="ratio-segment work" style="width:0%"></div>
+        <div id="ratioBreak" class="ratio-segment break" style="width:0%"></div>
       </div>
       <p id="detailsBreakdown" class="score-breakdown"></p>
     </div>

@@ -7,6 +7,16 @@ let dailyPauses = {};
 let dailyGoalMs = 8 * 60 * 60 * 1000;
 let lastWeeklyReportDate = '';
 
+// New Features State
+let longestSessionMs = 0;
+let overworkNotifiedForCurrentSession = false;
+let startTimesSum = 0;
+let startTimesCount = 0;
+let hasStartedToday = false;
+let dailyBreaks = {};
+let timeOfDayBuckets = { morning: 0, afternoon: 0, evening: 0, night: 0 };
+let lastPauseTimestamp = 0;
+
 function getTodayDate() {
   const d = new Date();
   return `${d.getFullYear()}-${(d.getMonth() + 1).toString().padStart(2, '0')}-${d.getDate().toString().padStart(2, '0')}`;
@@ -18,7 +28,10 @@ let wasAutoPaused = false;
 
 // Initialize state from storage
 let storageLoadedPromise = new Promise((resolve) => {
-  chrome.storage.local.get(['startTime', 'elapsedTime', 'isRunning', 'dailyLogs', 'lastRecordedDate', 'reminderDisabledUntil', 'wasAutoPaused', 'dailyPauses', 'dailyGoalMs', 'lastWeeklyReportDate'], (result) => {
+  chrome.storage.local.get([
+    'startTime', 'elapsedTime', 'isRunning', 'dailyLogs', 'lastRecordedDate', 'reminderDisabledUntil', 'wasAutoPaused', 'dailyPauses', 'dailyGoalMs', 'lastWeeklyReportDate',
+    'longestSessionMs', 'startTimesSum', 'startTimesCount', 'hasStartedToday', 'dailyBreaks', 'timeOfDayBuckets', 'lastPauseTimestamp'
+  ], (result) => {
     startTime = result.startTime || 0;
     elapsedTime = result.elapsedTime || 0;
     isRunning = result.isRunning || false;
@@ -29,6 +42,14 @@ let storageLoadedPromise = new Promise((resolve) => {
     dailyPauses = result.dailyPauses || {};
     dailyGoalMs = result.dailyGoalMs || 8 * 60 * 60 * 1000;
     lastWeeklyReportDate = result.lastWeeklyReportDate || '';
+    
+    longestSessionMs = result.longestSessionMs || 0;
+    startTimesSum = result.startTimesSum || 0;
+    startTimesCount = result.startTimesCount || 0;
+    hasStartedToday = result.hasStartedToday || false;
+    dailyBreaks = result.dailyBreaks || {};
+    timeOfDayBuckets = result.timeOfDayBuckets || { morning: 0, afternoon: 0, evening: 0, night: 0 };
+    lastPauseTimestamp = result.lastPauseTimestamp || 0;
 
     checkMidnightReset();
 
@@ -42,34 +63,31 @@ let storageLoadedPromise = new Promise((resolve) => {
 function checkMidnightReset() {
   const today = getTodayDate();
   if (today !== lastRecordedDate) {
-    // It's a new day! 
     if (isRunning) {
-      // Split the current session: previous day part goes to logs
       const endOfPreviousDay = new Date();
-      endOfPreviousDay.setHours(0, 0, 0, 0); // Midnight of TODAY
+      endOfPreviousDay.setHours(0, 0, 0, 0); 
       
       const durationForOldDay = endOfPreviousDay.getTime() - startTime;
       
       if (durationForOldDay > 0) {
         recordWorkedTime(durationForOldDay, lastRecordedDate);
+        checkLongestSession(durationForOldDay + elapsedTime);
+        recordTimeOfDayBuckets(startTime, endOfPreviousDay.getTime());
       }
       
-      // Stop the timer, reset clock to zero for the new day
-      isRunning = false;
-      startTime = 0;
+      startTime = endOfPreviousDay.getTime();
       elapsedTime = 0; 
-      stopBadgeUpdate();
+      hasStartedToday = true;
     } else {
-      // Not running, just reset the counter for the new day
       elapsedTime = 0;
       startTime = 0;
+      hasStartedToday = false;
     }
     
     lastRecordedDate = today;
     reminderDisabledUntil = 0;
-    chrome.storage.local.set({ isRunning, elapsedTime, startTime, lastRecordedDate, reminderDisabledUntil });
+    chrome.storage.local.set({ isRunning, elapsedTime, startTime, lastRecordedDate, reminderDisabledUntil, hasStartedToday });
     
-    // Update badge immediately if running
     if (isRunning) {
       updateBadge();
     } else {
@@ -172,12 +190,42 @@ function updateBadge() {
   chrome.action.setBadgeText({ text: formatted });
   chrome.action.setBadgeBackgroundColor({ color: '#1e293b' });
   chrome.action.setBadgeTextColor({ color: '#ffffff' });
+
+  if (currentElapsed > 4 * 60 * 60 * 1000 && !overworkNotifiedForCurrentSession) {
+    chrome.notifications.create('overwork-alert', {
+      type: 'basic',
+      iconUrl: 'icons/logo.png',
+      title: 'Focus Flow: Overwork Alert',
+      message: 'You have been at it for 4+ hours straight. Consider taking a short break!',
+      priority: 1
+    });
+    overworkNotifiedForCurrentSession = true;
+  }
 }
 
 function recordWorkedTime(ms, date = null) {
   const targetDate = date || getTodayDate();
   dailyLogs[targetDate] = (dailyLogs[targetDate] || 0) + ms;
   chrome.storage.local.set({ dailyLogs });
+}
+
+function checkLongestSession(ms) {
+  if (ms > longestSessionMs) {
+    longestSessionMs = ms;
+    chrome.storage.local.set({ longestSessionMs });
+  }
+}
+
+function recordTimeOfDayBuckets(start, end) {
+  const midPoint = new Date((start + end) / 2);
+  const hour = midPoint.getHours();
+  let bucket = 'night';
+  if (hour >= 6 && hour < 12) bucket = 'morning';
+  else if (hour >= 12 && hour < 17) bucket = 'afternoon';
+  else if (hour >= 17 && hour < 22) bucket = 'evening';
+  
+  timeOfDayBuckets[bucket] += (end - start);
+  chrome.storage.local.set({ timeOfDayBuckets });
 }
 
 function recordPause(type, date = null) {
@@ -202,16 +250,36 @@ function stopBadgeUpdate() {
 let lastReminderTime = 0;
 const REMINDER_COOLDOWN = 60 * 60 * 1000; // 1 hour
 
+function formatMinutesToTime(mins) {
+  const h = Math.floor(mins / 60);
+  const m = Math.floor(mins % 60);
+  const ampm = h >= 12 ? 'PM' : 'AM';
+  const h12 = h % 12 || 12;
+  return `${h12}:${m.toString().padStart(2, '0')} ${ampm}`;
+}
+
 function showReminder() {
   const now = Date.now();
   if (now < reminderDisabledUntil) return;
+  if (isRunning) return;
 
-  if (!isRunning && (now - lastReminderTime > REMINDER_COOLDOWN)) {
+  if (startTimesCount > 0) {
+    const avgMinutes = startTimesSum / startTimesCount;
+    const currentDate = new Date();
+    const currentMinutes = currentDate.getHours() * 60 + currentDate.getMinutes();
+    
+    if (currentMinutes < avgMinutes) {
+      return; 
+    }
+  }
+
+  if (now - lastReminderTime > REMINDER_COOLDOWN) {
+    const avgText = startTimesCount > 0 ? ` (Usually you start around ${formatMinutesToTime(startTimesSum / startTimesCount)})` : '';
     chrome.notifications.create('start-reminder', {
       type: 'basic',
       iconUrl: 'icons/logo.png',
       title: 'Focus Flow',
-      message: 'Don\'t forget to start your tracker to stay in the flow!',
+      message: `Time to start your tracker?${avgText}`,
       buttons: [{ title: 'Mute for Today' }],
       priority: 1
     });
@@ -238,39 +306,75 @@ chrome.runtime.onStartup.addListener(() => {
   showReminder();
 });
 
+function doStartTimer() {
+  wasAutoPaused = false;
+  if (!isRunning) {
+    isRunning = true;
+    startTime = Date.now();
+    overworkNotifiedForCurrentSession = false;
+    
+    if (!hasStartedToday) {
+      hasStartedToday = true;
+      const now = new Date();
+      startTimesSum += (now.getHours() * 60 + now.getMinutes());
+      startTimesCount += 1;
+      chrome.storage.local.set({ hasStartedToday, startTimesSum, startTimesCount });
+    }
+    
+    if (lastPauseTimestamp > 0 && hasStartedToday) {
+      const breakDuration = Date.now() - lastPauseTimestamp;
+      const date = getTodayDate();
+      dailyBreaks[date] = (dailyBreaks[date] || 0) + breakDuration;
+      chrome.storage.local.set({ dailyBreaks });
+    }
+    lastPauseTimestamp = 0;
+    
+    chrome.storage.local.set({ isRunning, startTime, wasAutoPaused, lastPauseTimestamp });
+    startBadgeUpdate();
+    chrome.notifications.clear('start-reminder');
+  } else {
+    chrome.storage.local.set({ wasAutoPaused });
+  }
+}
+
+function doStopTimer(isManual) {
+  wasAutoPaused = false;
+  if (isRunning) {
+    isRunning = false;
+    const now = Date.now();
+    const sessionDuration = now - startTime;
+    elapsedTime += sessionDuration;
+    recordWorkedTime(sessionDuration);
+    checkLongestSession(elapsedTime);
+    recordTimeOfDayBuckets(startTime, now);
+    
+    if (isManual) recordPause('manual');
+    
+    lastPauseTimestamp = now;
+    chrome.storage.local.set({ isRunning, elapsedTime, wasAutoPaused, lastPauseTimestamp });
+    stopBadgeUpdate();
+  } else {
+    chrome.storage.local.set({ wasAutoPaused });
+  }
+}
+
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   storageLoadedPromise.then(() => {
     checkMidnightReset();
 
     if (message.type === 'START') {
-      wasAutoPaused = false;
-      if (!isRunning) {
-        isRunning = true;
-        startTime = Date.now();
-        chrome.storage.local.set({ isRunning, startTime, wasAutoPaused });
-        startBadgeUpdate();
-        chrome.notifications.clear('start-reminder');
-      } else {
-        chrome.storage.local.set({ wasAutoPaused });
-      }
+      doStartTimer();
       sendResponse({ success: true });
     } else if (message.type === 'STOP') {
-      wasAutoPaused = false;
-      if (isRunning) {
-        isRunning = false;
-        const sessionDuration = Date.now() - startTime;
-        elapsedTime += sessionDuration;
-        recordWorkedTime(sessionDuration);
-        recordPause('manual');
-        chrome.storage.local.set({ isRunning, elapsedTime, wasAutoPaused });
-        stopBadgeUpdate();
-      } else {
-        chrome.storage.local.set({ wasAutoPaused });
-      }
+      doStopTimer(true);
       sendResponse({ success: true });
     } else if (message.type === 'GET_STATUS') {
       const currentElapsed = isRunning ? (Date.now() - startTime + elapsedTime) : elapsedTime;
-      sendResponse({ isRunning, elapsedTime: currentElapsed, dailyLogs, dailyPauses, dailyGoalMs, startTime });
+      sendResponse({ 
+        isRunning, elapsedTime: currentElapsed, dailyLogs, dailyPauses, 
+        dailyGoalMs, startTime, longestSessionMs, startTimesSum, startTimesCount,
+        dailyBreaks, timeOfDayBuckets
+      });
     } else if (message.type === 'UPDATE_GOAL') {
       dailyGoalMs = message.dailyGoalMs;
       chrome.storage.local.set({ dailyGoalMs });
@@ -288,6 +392,20 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   return true;
 });
 
+chrome.commands.onCommand.addListener((command) => {
+  if (command === 'toggle-timer') {
+    storageLoadedPromise.then(() => {
+      checkMidnightReset();
+      if (isRunning) {
+        doStopTimer(true);
+      } else {
+        doStartTimer();
+      }
+      chrome.runtime.sendMessage({ type: 'STATE_UPDATED' }).catch(() => {});
+    });
+  }
+});
+
 // --- Auto-Pause Logic ---
 const IDLE_THRESHOLD = 900; // 15 minutes in seconds
 chrome.idle.setDetectionInterval(IDLE_THRESHOLD);
@@ -300,26 +418,24 @@ chrome.idle.onStateChanged.addListener((newState) => {
         
         const now = Date.now();
         const sessionDurationSinceStart = now - startTime;
-        
         let activeDuration;
         
         if (newState === 'idle') {
-          // If it triggered 'idle', there was exactly 15 minutes of continuous inactivity.
-          // We subtract the 15 minutes so the idle time isn't counted as work.
           const idleTimeMs = 900 * 1000;
           activeDuration = Math.max(0, sessionDurationSinceStart - idleTimeMs);
         } else {
-          // If it triggered 'locked', the machine was locked or put to sleep.
-          // This happens instantly (e.g. closing the lid), so we DO NOT subtract 15 minutes.
           activeDuration = sessionDurationSinceStart;
         }
         
         elapsedTime += activeDuration;
         recordWorkedTime(activeDuration);
+        checkLongestSession(elapsedTime);
+        recordTimeOfDayBuckets(startTime, startTime + activeDuration);
         recordPause('idle');
         
         wasAutoPaused = true;
-        chrome.storage.local.set({ isRunning, elapsedTime, wasAutoPaused });
+        lastPauseTimestamp = Date.now();
+        chrome.storage.local.set({ isRunning, elapsedTime, wasAutoPaused, lastPauseTimestamp });
         stopBadgeUpdate();
 
         chrome.notifications.create('auto-pause-notification', {
@@ -341,7 +457,17 @@ chrome.idle.onStateChanged.addListener((newState) => {
         isRunning = true;
         startTime = Date.now();
         wasAutoPaused = false;
-        chrome.storage.local.set({ isRunning, startTime, wasAutoPaused });
+        overworkNotifiedForCurrentSession = false;
+        
+        if (lastPauseTimestamp > 0 && hasStartedToday) {
+          const breakDuration = Date.now() - lastPauseTimestamp;
+          const date = getTodayDate();
+          dailyBreaks[date] = (dailyBreaks[date] || 0) + breakDuration;
+          chrome.storage.local.set({ dailyBreaks });
+        }
+        lastPauseTimestamp = 0;
+        
+        chrome.storage.local.set({ isRunning, startTime, wasAutoPaused, lastPauseTimestamp });
         startBadgeUpdate();
 
         chrome.notifications.create('auto-resume-notification', {

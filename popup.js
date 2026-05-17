@@ -10,6 +10,11 @@ let animationFrameId = null;
 let currentDailyLogs = {};
 let currentDailyPauses = {};
 let currentDailyGoalMs = 8 * 60 * 60 * 1000;
+let currentDailyBreaks = {};
+let currentTimeOfDayBuckets = { morning: 0, afternoon: 0, evening: 0, night: 0 };
+let currentLongestSessionMs = 0;
+let currentStartTimesSum = 0;
+let currentStartTimesCount = 0;
 
 const displayEl = document.getElementById('display');
 const msEl = document.querySelector('.milliseconds');
@@ -24,6 +29,25 @@ const detailsTimeEl = document.getElementById('detailsTime');
 const detailsScoreEl = document.getElementById('detailsScore');
 const detailsBreakdownEl = document.getElementById('detailsBreakdown');
 const progressValueEl = document.getElementById('progressValue');
+
+const bestDayBadge = document.getElementById('bestDayBadge');
+const worstDayBadge = document.getElementById('worstDayBadge');
+const avgStartTimeEl = document.getElementById('avgStartTime');
+const longestSessionTimeEl = document.getElementById('longestSessionTime');
+const barMorning = document.getElementById('barMorning');
+const barAfternoon = document.getElementById('barAfternoon');
+const barEvening = document.getElementById('barEvening');
+const barNight = document.getElementById('barNight');
+const dailyGoalInput = document.getElementById('dailyGoalInput');
+const ratioWork = document.getElementById('ratioWork');
+const ratioBreak = document.getElementById('ratioBreak');
+
+dailyGoalInput.addEventListener('change', (e) => {
+  const val = parseFloat(e.target.value);
+  if (val > 0) {
+    chrome.runtime.sendMessage({ type: 'UPDATE_GOAL', dailyGoalMs: val * 3600000 }, updateUI);
+  }
+});
 
 function formatTime(ms) {
   const seconds = Math.floor((ms / 1000) % 60);
@@ -50,6 +74,15 @@ function updateUI() {
       sessionStartTime = response.startTime;
       currentDailyGoalMs = response.dailyGoalMs || 8 * 3600000;
       currentDailyPauses = response.dailyPauses || {};
+      currentDailyBreaks = response.dailyBreaks || {};
+      currentTimeOfDayBuckets = response.timeOfDayBuckets || { morning: 0, afternoon: 0, evening: 0, night: 0 };
+      currentLongestSessionMs = response.longestSessionMs || 0;
+      currentStartTimesSum = response.startTimesSum || 0;
+      currentStartTimesCount = response.startTimesCount || 0;
+      
+      if (document.activeElement !== dailyGoalInput) {
+        dailyGoalInput.value = (currentDailyGoalMs / 3600000).toFixed(1);
+      }
       
       // Update body state for global animations
       if (isRunning) {
@@ -172,6 +205,20 @@ function renderHeatmap() {
       
       const pauses = currentDailyPauses[dateStr] || { manual: 0, idle: 0 };
       const hours = liveTime / 3600000;
+      
+      // Update Ratio Bar
+      const breakMs = currentDailyBreaks[dateStr] || 0;
+      const totalTime = liveTime + breakMs;
+      if (totalTime > 0) {
+        const workPerc = (liveTime / totalTime) * 100;
+        const breakPerc = (breakMs / totalTime) * 100;
+        ratioWork.style.width = `${workPerc}%`;
+        ratioBreak.style.width = `${breakPerc}%`;
+      } else {
+        ratioWork.style.width = `0%`;
+        ratioBreak.style.width = `0%`;
+      }
+      
       if (hours === 0) {
         detailsScoreEl.textContent = '-';
         detailsBreakdownEl.textContent = 'No activity recorded.';
@@ -203,11 +250,13 @@ function updateStatistics() {
   let monthlyTotal = 0;
   let totalLogs = 0;
   let daysWithData = 0;
+  
+  let bestDayMs = 0;
+  let worstDayMs = Infinity;
 
   const currentMonth = now.getMonth();
   const currentYear = now.getFullYear();
 
-  // Get start of the week (Sunday)
   const startOfWeek = new Date(now);
   startOfWeek.setDate(now.getDate() - now.getDay());
   startOfWeek.setHours(0, 0, 0, 0);
@@ -215,17 +264,16 @@ function updateStatistics() {
   Object.entries(currentDailyLogs).forEach(([dateStr, ms]) => {
     const logDate = new Date(dateStr);
     
-    // Monthly total
     if (logDate.getMonth() === currentMonth && logDate.getFullYear() === currentYear) {
       monthlyTotal += ms;
     }
 
-    // Weekly total
     if (logDate >= startOfWeek && logDate <= now) {
       weeklyTotal += ms;
+      if (ms > bestDayMs) bestDayMs = ms;
+      if (ms > 0 && ms < worstDayMs) worstDayMs = ms;
     }
 
-    // For average
     totalLogs += ms;
     daysWithData++;
   });
@@ -233,12 +281,42 @@ function updateStatistics() {
   const formatShortTime = (ms) => {
     const hours = Math.floor(ms / (1000 * 60 * 60));
     const minutes = Math.floor((ms / (1000 * 60)) % 60);
-    return `${hours}h ${minutes}m`;
+    if (hours > 0) return `${hours}h ${minutes}m`;
+    return `${minutes}m`;
   };
 
   document.getElementById('statWeekly').textContent = formatShortTime(weeklyTotal);
   document.getElementById('statMonthly').textContent = formatShortTime(monthlyTotal);
   document.getElementById('statAverage').textContent = daysWithData > 0 ? formatShortTime(totalLogs / daysWithData) : '0h 0m';
+  
+  bestDayBadge.textContent = bestDayMs > 0 ? formatShortTime(bestDayMs) : '-';
+  worstDayBadge.textContent = (worstDayMs < Infinity && worstDayMs > 0) ? formatShortTime(worstDayMs) : '-';
+  
+  if (currentStartTimesCount > 0) {
+    const avgMins = currentStartTimesSum / currentStartTimesCount;
+    const h = Math.floor(avgMins / 60);
+    const m = Math.floor(avgMins % 60);
+    const ampm = h >= 12 ? 'PM' : 'AM';
+    const h12 = h % 12 || 12;
+    avgStartTimeEl.textContent = `${h12}:${m.toString().padStart(2, '0')} ${ampm}`;
+  } else {
+    avgStartTimeEl.textContent = '-';
+  }
+  
+  longestSessionTimeEl.textContent = currentLongestSessionMs > 0 ? formatShortTime(currentLongestSessionMs) : '-';
+  
+  const maxBucket = Math.max(
+    currentTimeOfDayBuckets.morning, 
+    currentTimeOfDayBuckets.afternoon, 
+    currentTimeOfDayBuckets.evening, 
+    currentTimeOfDayBuckets.night, 
+    1
+  );
+  
+  barMorning.style.height = `${(currentTimeOfDayBuckets.morning / maxBucket) * 100}%`;
+  barAfternoon.style.height = `${(currentTimeOfDayBuckets.afternoon / maxBucket) * 100}%`;
+  barEvening.style.height = `${(currentTimeOfDayBuckets.evening / maxBucket) * 100}%`;
+  barNight.style.height = `${(currentTimeOfDayBuckets.night / maxBucket) * 100}%`;
 }
 
 historyToggleBtn.addEventListener('click', () => {

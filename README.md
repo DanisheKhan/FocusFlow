@@ -6,15 +6,24 @@ Focus Flow is a premium, minimalist Chrome extension designed to help you track 
 
 - **Beautiful Minimalist UI**: A premium dark-mode, glassmorphism interface featuring smooth micro-animations.
 - **Continuous Background Tracking**: Built on Manifest V3, the stopwatch runs reliably in the background, updating a live badge on the extension icon.
-- **Daily Goal Progress Ring**: Set your sights on a daily target. A sleek, animated circular progress ring wraps your timer, filling up as you approach your goal.
-- **Focus Score**: Get intelligent feedback on your work sessions. Your daily Focus Score is calculated based on hours worked and penalizes manual pauses and idle interruptions, valuing quality of focus, not just quantity.
+- **Customizable Daily Goal & Progress Ring**: Set your own daily goal (e.g., 8 hours). A sleek, animated circular progress ring wraps your timer, filling up as you approach your goal.
+- **Focus Score**: Get intelligent feedback on your work sessions. Your daily Focus Score is calculated based on hours worked and penalizes manual pauses and idle interruptions, valuing quality of focus.
+- **Break Tracker**: Calculates your exact Work vs Break ratio each day and displays it via a dual-tone progress bar inside your history.
 - **Productivity Heatmap**: View a stunning GitHub-style full-year heatmap of your activity. Darker green cells immediately indicate your most productive days.
+- **Comprehensive Statistics**: 
+  - Highlights your **Best Day** and **Worst Day** automatically.
+  - Keeps track of your **Longest Session Ever**.
+  - Learns your **Average Start Time** over time.
+- **Time of Day Breakdown**: Visualizes when you are most productive (Morning, Afternoon, Evening, or Night) in a sleek bar chart.
+- **Smart Start Reminder**: Rather than a generic notification, the extension waits until *after* your personal Average Start Time to gently remind you to start your timer if you haven't yet.
+- **Overwork Alerts**: Nudges you to take a break if you have been working for 4+ hours straight.
 - **Smart Auto-Pause & Auto-Resume**: 
   - Detects if you step away from your computer for 15 minutes and automatically pauses your timer.
   - Pauses instantly if you lock your machine or put it to sleep.
   - Automatically resumes tracking exactly where you left off when you wake up your laptop.
+- **Smarter Midnight Rollover (Session Split Detection)**: Automatically splits your work sessions right at midnight, logging your late-night sessions accurately across two separate days without you having to restart the timer.
 - **Weekly Report Notifications**: Every Sunday evening, receive a summary notification detailing your total hours and daily average for the week.
-- **Midnight Rollover**: Automatically resets the timer for the new day at midnight, logging your late-night sessions seamlessly to the correct dates.
+- **Keyboard Shortcut**: Use `Alt+Shift+S` (or `Cmd+Shift+S` on Mac) to quickly Start and Stop the timer without opening the popup!
 
 ## 🚀 Installation
 
