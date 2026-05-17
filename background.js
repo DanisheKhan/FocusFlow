@@ -10,16 +10,18 @@ function getTodayDate() {
 
 let lastRecordedDate = getTodayDate();
 let reminderDisabledUntil = 0;
+let wasAutoPaused = false;
 
 // Initialize state from storage
 let storageLoadedPromise = new Promise((resolve) => {
-  chrome.storage.local.get(['startTime', 'elapsedTime', 'isRunning', 'dailyLogs', 'lastRecordedDate', 'reminderDisabledUntil'], (result) => {
+  chrome.storage.local.get(['startTime', 'elapsedTime', 'isRunning', 'dailyLogs', 'lastRecordedDate', 'reminderDisabledUntil', 'wasAutoPaused'], (result) => {
     startTime = result.startTime || 0;
     elapsedTime = result.elapsedTime || 0;
     isRunning = result.isRunning || false;
     dailyLogs = result.dailyLogs || {};
     lastRecordedDate = result.lastRecordedDate || getTodayDate();
     reminderDisabledUntil = result.reminderDisabledUntil || 0;
+    wasAutoPaused = result.wasAutoPaused || false;
 
     checkMidnightReset();
 
@@ -183,32 +185,39 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     checkMidnightReset();
 
     if (message.type === 'START') {
+      wasAutoPaused = false;
       if (!isRunning) {
         isRunning = true;
         startTime = Date.now();
-        chrome.storage.local.set({ isRunning, startTime });
+        chrome.storage.local.set({ isRunning, startTime, wasAutoPaused });
         startBadgeUpdate();
         chrome.notifications.clear('start-reminder');
+      } else {
+        chrome.storage.local.set({ wasAutoPaused });
       }
       sendResponse({ success: true });
     } else if (message.type === 'STOP') {
+      wasAutoPaused = false;
       if (isRunning) {
         isRunning = false;
         const sessionDuration = Date.now() - startTime;
         elapsedTime += sessionDuration;
         recordWorkedTime(sessionDuration);
-        chrome.storage.local.set({ isRunning, elapsedTime });
+        chrome.storage.local.set({ isRunning, elapsedTime, wasAutoPaused });
         stopBadgeUpdate();
+      } else {
+        chrome.storage.local.set({ wasAutoPaused });
       }
       sendResponse({ success: true });
     } else if (message.type === 'GET_STATUS') {
       const currentElapsed = isRunning ? (Date.now() - startTime + elapsedTime) : elapsedTime;
       sendResponse({ isRunning, elapsedTime: currentElapsed, dailyLogs, startTime });
     } else if (message.type === 'RESET') {
+      wasAutoPaused = false;
       isRunning = false;
       elapsedTime = 0;
       startTime = 0;
-      chrome.storage.local.set({ isRunning, elapsedTime, startTime });
+      chrome.storage.local.set({ isRunning, elapsedTime, startTime, wasAutoPaused });
       stopBadgeUpdate();
       sendResponse({ success: true });
     }
@@ -221,46 +230,69 @@ const IDLE_THRESHOLD = 900; // 15 minutes in seconds
 chrome.idle.setDetectionInterval(IDLE_THRESHOLD);
 
 chrome.idle.onStateChanged.addListener((newState) => {
-  if (newState === 'idle' || newState === 'locked') {
-    if (isRunning) {
-      isRunning = false;
-      
-      const now = Date.now();
-      const sessionDurationSinceStart = now - startTime;
-      
-      let activeDuration;
-      
-      if (newState === 'idle') {
-        // If it triggered 'idle', there was exactly 15 minutes of continuous inactivity.
-        // We subtract the 15 minutes so the idle time isn't counted as work.
-        const idleTimeMs = 900 * 1000;
-        activeDuration = Math.max(0, sessionDurationSinceStart - idleTimeMs);
-      } else {
-        // If it triggered 'locked', the machine was locked or put to sleep.
-        // This happens instantly (e.g. closing the lid), so we DO NOT subtract 15 minutes.
-        activeDuration = sessionDurationSinceStart;
+  storageLoadedPromise.then(() => {
+    if (newState === 'idle' || newState === 'locked') {
+      if (isRunning) {
+        isRunning = false;
+        
+        const now = Date.now();
+        const sessionDurationSinceStart = now - startTime;
+        
+        let activeDuration;
+        
+        if (newState === 'idle') {
+          // If it triggered 'idle', there was exactly 15 minutes of continuous inactivity.
+          // We subtract the 15 minutes so the idle time isn't counted as work.
+          const idleTimeMs = 900 * 1000;
+          activeDuration = Math.max(0, sessionDurationSinceStart - idleTimeMs);
+        } else {
+          // If it triggered 'locked', the machine was locked or put to sleep.
+          // This happens instantly (e.g. closing the lid), so we DO NOT subtract 15 minutes.
+          activeDuration = sessionDurationSinceStart;
+        }
+        
+        elapsedTime += activeDuration;
+        recordWorkedTime(activeDuration);
+        
+        wasAutoPaused = true;
+        chrome.storage.local.set({ isRunning, elapsedTime, wasAutoPaused });
+        stopBadgeUpdate();
+
+        chrome.notifications.create('auto-pause-notification', {
+          type: 'basic',
+          iconUrl: 'icons/logo.png',
+          title: 'Focus Flow: Auto-Paused',
+          message: newState === 'idle' 
+            ? 'The stopwatch was paused after 15 minutes of inactivity.'
+            : 'The stopwatch was paused because the system was locked.',
+          priority: 1
+        });
+
+        // Update any open popups
+        chrome.runtime.sendMessage({ type: 'STATE_UPDATED' }).catch(() => {});
       }
-      
-      elapsedTime += activeDuration;
-      recordWorkedTime(activeDuration);
-      
-      chrome.storage.local.set({ isRunning, elapsedTime });
-      stopBadgeUpdate();
+    } else if (newState === 'active') {
+      checkMidnightReset();
+      if (wasAutoPaused && !isRunning) {
+        isRunning = true;
+        startTime = Date.now();
+        wasAutoPaused = false;
+        chrome.storage.local.set({ isRunning, startTime, wasAutoPaused });
+        startBadgeUpdate();
 
-      chrome.notifications.create('auto-pause-notification', {
-        type: 'basic',
-        iconUrl: 'icons/logo.png',
-        title: 'Focus Flow: Auto-Paused',
-        message: newState === 'idle' 
-          ? 'The stopwatch was paused after 15 minutes of inactivity.'
-          : 'The stopwatch was paused because the system was locked.',
-        priority: 1
-      });
+        chrome.notifications.create('auto-resume-notification', {
+          type: 'basic',
+          iconUrl: 'icons/logo.png',
+          title: 'Focus Flow: Auto-Resumed',
+          message: 'Welcome back! The stopwatch has been resumed.',
+          priority: 1
+        });
 
-      // Update any open popups
-      chrome.runtime.sendMessage({ type: 'STATE_UPDATED' }).catch(() => {});
+        // Update any open popups
+        chrome.runtime.sendMessage({ type: 'STATE_UPDATED' }).catch(() => {});
+      }
     }
-  }
+  });
 });
 
 
