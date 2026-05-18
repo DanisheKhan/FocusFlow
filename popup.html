@@ -105,13 +105,29 @@
     </div>
 
     <div id="dayDetails" class="day-details">
-      <p id="detailsDate">Select a date</p>
-      <p id="detailsTime">00:00:00</p>
-      <div class="score-container">
-        <span class="score-label">Focus Score</span>
-        <span id="detailsScore" class="score-value">-</span>
+      <div class="details-header-row">
+        <span id="detailsDate" class="details-date">Select a date</span>
+        <span id="detailsTime" class="details-time">00:00:00</span>
       </div>
-      <p id="detailsBreakdown" class="score-breakdown"></p>
+      
+      <div class="day-stats-grid">
+        <div class="day-stat-box">
+          <span class="day-stat-label">Goal Progress</span>
+          <span id="dayGoalVal" class="day-stat-val">-</span>
+        </div>
+        <div class="day-stat-box">
+          <span class="day-stat-label">Break Time</span>
+          <span id="dayBreakVal" class="day-stat-val">-</span>
+        </div>
+        <div class="day-stat-box">
+          <span class="day-stat-label">Manual Pauses</span>
+          <span id="dayManualVal" class="day-stat-val">-</span>
+        </div>
+        <div class="day-stat-box">
+          <span class="day-stat-label">Inactivity Pauses</span>
+          <span id="dayIdleVal" class="day-stat-val">-</span>
+        </div>
+      </div>
       
       <div class="ratio-section">
         <div class="ratio-header">

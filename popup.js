@@ -26,8 +26,10 @@ const historyPanel = document.getElementById('historyPanel');
 const heatmapGrid = document.getElementById('heatmapGrid');
 const detailsDateEl = document.getElementById('detailsDate');
 const detailsTimeEl = document.getElementById('detailsTime');
-const detailsScoreEl = document.getElementById('detailsScore');
-const detailsBreakdownEl = document.getElementById('detailsBreakdown');
+const dayGoalVal = document.getElementById('dayGoalVal');
+const dayBreakVal = document.getElementById('dayBreakVal');
+const dayManualVal = document.getElementById('dayManualVal');
+const dayIdleVal = document.getElementById('dayIdleVal');
 const progressValueEl = document.getElementById('progressValue');
 
 const bestDayBadge = document.getElementById('bestDayBadge');
@@ -66,6 +68,13 @@ function formatTime(ms) {
 function formatMs(ms) {
   const milliseconds = Math.floor((ms % 1000) / 10);
   return `.${milliseconds.toString().padStart(2, '0')}`;
+}
+
+function formatShortTime(ms) {
+  const hours = Math.floor(ms / (1000 * 60 * 60));
+  const minutes = Math.floor((ms / (1000 * 60)) % 60);
+  if (hours > 0) return `${hours}h ${minutes}m`;
+  return `${minutes}m`;
 }
 
 function updateUI() {
@@ -232,20 +241,20 @@ function renderHeatmap() {
         ratioText.innerHTML = `-`;
       }
       
-      if (hours === 0) {
-        detailsScoreEl.textContent = '-';
-        detailsBreakdownEl.textContent = 'No activity recorded.';
+      if (liveTime === 0) {
+        dayGoalVal.textContent = '-';
+        dayBreakVal.textContent = '-';
+        dayManualVal.textContent = '-';
+        dayIdleVal.textContent = '-';
       } else {
-        let baseScore = Math.min((hours / (currentDailyGoalMs / 3600000)) * 80, 80);
-        let manualDed = pauses.manual * 2;
-        let idleDed = pauses.idle * 5;
-        let finalScore = Math.max(1, Math.round(baseScore + 20 - manualDed - idleDed));
+        const goalRatio = Math.min(Math.round((liveTime / currentDailyGoalMs) * 100), 100);
+        const goalHours = (currentDailyGoalMs / 3600000).toFixed(1);
+        const workedHours = (liveTime / 3600000).toFixed(1);
         
-        detailsScoreEl.textContent = `${finalScore} / 100`;
-        detailsBreakdownEl.innerHTML = `
-          ${hours.toFixed(1)}h worked toward daily goal.<br>
-          Deductions: -${manualDed} pts (${pauses.manual} pauses) &bull; -${idleDed} pts (${pauses.idle} idle)
-        `;
+        dayGoalVal.textContent = `${workedHours}h / ${goalHours}h (${goalRatio}%)`;
+        dayBreakVal.textContent = breakMs > 0 ? formatShortTime(breakMs) : '0m';
+        dayManualVal.textContent = pauses.manual.toString();
+        dayIdleVal.textContent = pauses.idle.toString();
       }
     });
     
@@ -295,12 +304,7 @@ function updateStatistics() {
     daysWithData++;
   });
 
-  const formatShortTime = (ms) => {
-    const hours = Math.floor(ms / (1000 * 60 * 60));
-    const minutes = Math.floor((ms / (1000 * 60)) % 60);
-    if (hours > 0) return `${hours}h ${minutes}m`;
-    return `${minutes}m`;
-  };
+
 
   document.getElementById('statWeekly').textContent = formatShortTime(weeklyTotal);
   document.getElementById('statMonthly').textContent = formatShortTime(monthlyTotal);

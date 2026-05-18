@@ -379,16 +379,16 @@ body.history-open .btn-text::after {
   border-radius: 16px;
 }
 
-.score-container {
+.details-header-row {
   display: flex;
   justify-content: space-between;
-  align-items: center;
-  margin-top: 12px;
-  padding-top: 12px;
-  border-top: 1px solid var(--card-border);
+  align-items: baseline;
+  margin-bottom: 16px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--card-border);
 }
 
-.score-label {
+.details-date {
   font-size: 0.65rem;
   font-weight: 700;
   color: var(--text-muted);
@@ -396,36 +396,57 @@ body.history-open .btn-text::after {
   letter-spacing: 0.1em;
 }
 
-.score-value {
-  font-size: 1.1rem;
+.details-time {
+  font-family: 'Inter', sans-serif;
+  font-size: 1.2rem;
   font-weight: 800;
   color: var(--accent-color);
-  text-shadow: 0 0 10px var(--accent-glow);
+  text-shadow: 0 0 15px var(--accent-glow);
+  font-variant-numeric: tabular-nums;
 }
 
-.score-breakdown {
-  font-size: 0.6rem;
-  color: var(--text-muted);
-  margin-top: 8px;
-  text-align: left;
-  line-height: 1.4;
-  opacity: 0.8;
+.day-stats-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 10px;
+  margin-bottom: 16px;
 }
 
-#detailsDate {
-  font-size: 0.6rem;
+.day-stat-box {
+  background: rgba(255, 255, 255, 0.02);
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  padding: 12px;
+  border-radius: 12px;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+  transition: var(--transition);
+}
+
+.day-stat-box:hover {
+  background: rgba(255, 255, 255, 0.04);
+  border-color: rgba(255, 255, 255, 0.1);
+}
+
+.day-stat-label {
+  font-size: 0.55rem;
+  font-weight: 700;
   color: var(--text-muted);
   text-transform: uppercase;
   letter-spacing: 0.1em;
-  margin-bottom: 6px;
-  font-weight: 700;
 }
 
-#detailsTime {
-  font-size: 1.25rem;
+.day-stat-val {
+  font-family: 'Inter', sans-serif;
+  font-size: 0.85rem;
   font-weight: 700;
+  color: var(--text-main);
+  font-variant-numeric: tabular-nums;
+}
+
+#dayGoalVal {
   color: var(--accent-color);
-  text-shadow: 0 0 15px var(--accent-glow);
 }
 
 .status-indicator {
