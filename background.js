@@ -13,7 +13,6 @@ let overworkNotifiedForCurrentSession = false;
 let startTimesSum = 0;
 let startTimesCount = 0;
 let hasStartedToday = false;
-let dailyBreaks = {};
 let timeOfDayBuckets = { morning: 0, afternoon: 0, evening: 0, night: 0 };
 let lastPauseTimestamp = 0;
 
@@ -30,7 +29,7 @@ let wasAutoPaused = false;
 let storageLoadedPromise = new Promise((resolve) => {
   chrome.storage.local.get([
     'startTime', 'elapsedTime', 'isRunning', 'dailyLogs', 'lastRecordedDate', 'reminderDisabledUntil', 'wasAutoPaused', 'dailyPauses', 'dailyGoalMs', 'lastWeeklyReportDate',
-    'longestSessionMs', 'startTimesSum', 'startTimesCount', 'hasStartedToday', 'dailyBreaks', 'timeOfDayBuckets', 'lastPauseTimestamp'
+    'longestSessionMs', 'startTimesSum', 'startTimesCount', 'hasStartedToday', 'timeOfDayBuckets', 'lastPauseTimestamp'
   ], (result) => {
     startTime = result.startTime || 0;
     elapsedTime = result.elapsedTime || 0;
@@ -47,7 +46,6 @@ let storageLoadedPromise = new Promise((resolve) => {
     startTimesSum = result.startTimesSum || 0;
     startTimesCount = result.startTimesCount || 0;
     hasStartedToday = result.hasStartedToday || false;
-    dailyBreaks = result.dailyBreaks || {};
     timeOfDayBuckets = result.timeOfDayBuckets || { morning: 0, afternoon: 0, evening: 0, night: 0 };
     lastPauseTimestamp = result.lastPauseTimestamp || 0;
 
@@ -82,11 +80,12 @@ function checkMidnightReset() {
       elapsedTime = 0;
       startTime = 0;
       hasStartedToday = false;
+      lastPauseTimestamp = 0;
     }
     
     lastRecordedDate = today;
     reminderDisabledUntil = 0;
-    chrome.storage.local.set({ isRunning, elapsedTime, startTime, lastRecordedDate, reminderDisabledUntil, hasStartedToday });
+    chrome.storage.local.set({ isRunning, elapsedTime, startTime, lastRecordedDate, reminderDisabledUntil, hasStartedToday, lastPauseTimestamp });
     
     if (isRunning) {
       updateBadge();
@@ -313,6 +312,8 @@ function doStartTimer() {
     startTime = Date.now();
     overworkNotifiedForCurrentSession = false;
     
+    const isFirstStartOfDay = !hasStartedToday;
+    
     if (!hasStartedToday) {
       hasStartedToday = true;
       const now = new Date();
@@ -321,12 +322,6 @@ function doStartTimer() {
       chrome.storage.local.set({ hasStartedToday, startTimesSum, startTimesCount });
     }
     
-    if (lastPauseTimestamp > 0 && hasStartedToday) {
-      const breakDuration = Date.now() - lastPauseTimestamp;
-      const date = getTodayDate();
-      dailyBreaks[date] = (dailyBreaks[date] || 0) + breakDuration;
-      chrome.storage.local.set({ dailyBreaks });
-    }
     lastPauseTimestamp = 0;
     
     chrome.storage.local.set({ isRunning, startTime, wasAutoPaused, lastPauseTimestamp });
@@ -373,7 +368,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       sendResponse({ 
         isRunning, elapsedTime: currentElapsed, dailyLogs, dailyPauses, 
         dailyGoalMs, startTime, longestSessionMs, startTimesSum, startTimesCount,
-        dailyBreaks, timeOfDayBuckets
+        timeOfDayBuckets
       });
     } else if (message.type === 'UPDATE_GOAL') {
       dailyGoalMs = message.dailyGoalMs;
@@ -447,12 +442,6 @@ chrome.idle.onStateChanged.addListener((newState) => {
         wasAutoPaused = false;
         overworkNotifiedForCurrentSession = false;
         
-        if (lastPauseTimestamp > 0 && hasStartedToday) {
-          const breakDuration = Date.now() - lastPauseTimestamp;
-          const date = getTodayDate();
-          dailyBreaks[date] = (dailyBreaks[date] || 0) + breakDuration;
-          chrome.storage.local.set({ dailyBreaks });
-        }
         lastPauseTimestamp = 0;
         
         chrome.storage.local.set({ isRunning, startTime, wasAutoPaused, lastPauseTimestamp });

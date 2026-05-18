@@ -10,7 +10,6 @@ let animationFrameId = null;
 let currentDailyLogs = {};
 let currentDailyPauses = {};
 let currentDailyGoalMs = 8 * 60 * 60 * 1000;
-let currentDailyBreaks = {};
 let currentTimeOfDayBuckets = { morning: 0, afternoon: 0, evening: 0, night: 0 };
 let currentLongestSessionMs = 0;
 let currentStartTimesSum = 0;
@@ -27,7 +26,7 @@ const heatmapGrid = document.getElementById('heatmapGrid');
 const detailsDateEl = document.getElementById('detailsDate');
 const detailsTimeEl = document.getElementById('detailsTime');
 const dayGoalVal = document.getElementById('dayGoalVal');
-const dayBreakVal = document.getElementById('dayBreakVal');
+const dayGoalBar = document.getElementById('dayGoalBar');
 const dayManualVal = document.getElementById('dayManualVal');
 const dayIdleVal = document.getElementById('dayIdleVal');
 const progressValueEl = document.getElementById('progressValue');
@@ -41,9 +40,6 @@ const barAfternoon = document.getElementById('barAfternoon');
 const barEvening = document.getElementById('barEvening');
 const barNight = document.getElementById('barNight');
 const dailyGoalInput = document.getElementById('dailyGoalInput');
-const ratioWork = document.getElementById('ratioWork');
-const ratioBreak = document.getElementById('ratioBreak');
-const ratioText = document.getElementById('ratioText');
 const currentTimeEl = document.getElementById('currentTime');
 
 dailyGoalInput.addEventListener('change', (e) => {
@@ -94,7 +90,6 @@ function updateUI() {
       sessionStartTime = response.startTime;
       currentDailyGoalMs = response.dailyGoalMs || 8 * 3600000;
       currentDailyPauses = response.dailyPauses || {};
-      currentDailyBreaks = response.dailyBreaks || {};
       currentTimeOfDayBuckets = response.timeOfDayBuckets || { morning: 0, afternoon: 0, evening: 0, night: 0 };
       currentLongestSessionMs = response.longestSessionMs || 0;
       currentStartTimesSum = response.startTimesSum || 0;
@@ -224,26 +219,10 @@ function renderHeatmap() {
       detailsTimeEl.textContent = formatTime(liveTime);
       
       const pauses = currentDailyPauses[dateStr] || { manual: 0, idle: 0 };
-      const hours = liveTime / 3600000;
-      
-      // Update Ratio Bar
-      const breakMs = currentDailyBreaks[dateStr] || 0;
-      const totalTime = liveTime + breakMs;
-      if (totalTime > 0) {
-        const workPerc = Math.round((liveTime / totalTime) * 100);
-        const breakPerc = Math.round((breakMs / totalTime) * 100);
-        ratioWork.style.width = `${workPerc}%`;
-        ratioBreak.style.width = `${breakPerc}%`;
-        ratioText.innerHTML = `<span style="color: var(--accent-color)">${workPerc}% Work</span> &bull; <span style="color: var(--break-color)">${breakPerc}% Break</span>`;
-      } else {
-        ratioWork.style.width = `0%`;
-        ratioBreak.style.width = `0%`;
-        ratioText.innerHTML = `-`;
-      }
       
       if (liveTime === 0) {
         dayGoalVal.textContent = '-';
-        dayBreakVal.textContent = '-';
+        dayGoalBar.style.width = '0%';
         dayManualVal.textContent = '-';
         dayIdleVal.textContent = '-';
       } else {
@@ -252,7 +231,7 @@ function renderHeatmap() {
         const workedHours = (liveTime / 3600000).toFixed(1);
         
         dayGoalVal.textContent = `${workedHours}h / ${goalHours}h (${goalRatio}%)`;
-        dayBreakVal.textContent = breakMs > 0 ? formatShortTime(breakMs) : '0m';
+        dayGoalBar.style.width = `${goalRatio}%`;
         dayManualVal.textContent = pauses.manual.toString();
         dayIdleVal.textContent = pauses.idle.toString();
       }
