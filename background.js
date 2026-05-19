@@ -15,6 +15,7 @@ let startTimesCount = 0;
 let hasStartedToday = false;
 let timeOfDayBuckets = { morning: 0, afternoon: 0, evening: 0, night: 0 };
 let lastPauseTimestamp = 0;
+let lastSavedHeartbeatTime = 0;
 
 function getTodayDate() {
   const d = new Date();
@@ -27,34 +28,77 @@ let wasAutoPaused = false;
 
 // Initialize state from storage
 let storageLoadedPromise = new Promise((resolve) => {
-  chrome.storage.local.get([
-    'startTime', 'elapsedTime', 'isRunning', 'dailyLogs', 'lastRecordedDate', 'reminderDisabledUntil', 'wasAutoPaused', 'dailyPauses', 'dailyGoalMs', 'lastWeeklyReportDate',
-    'longestSessionMs', 'startTimesSum', 'startTimesCount', 'hasStartedToday', 'timeOfDayBuckets', 'lastPauseTimestamp'
-  ], (result) => {
-    startTime = result.startTime || 0;
-    elapsedTime = result.elapsedTime || 0;
-    isRunning = result.isRunning || false;
-    dailyLogs = result.dailyLogs || {};
-    lastRecordedDate = result.lastRecordedDate || getTodayDate();
-    reminderDisabledUntil = result.reminderDisabledUntil || 0;
-    wasAutoPaused = result.wasAutoPaused || false;
-    dailyPauses = result.dailyPauses || {};
-    dailyGoalMs = result.dailyGoalMs || 8 * 60 * 60 * 1000;
-    lastWeeklyReportDate = result.lastWeeklyReportDate || '';
-    
-    longestSessionMs = result.longestSessionMs || 0;
-    startTimesSum = result.startTimesSum || 0;
-    startTimesCount = result.startTimesCount || 0;
-    hasStartedToday = result.hasStartedToday || false;
-    timeOfDayBuckets = result.timeOfDayBuckets || { morning: 0, afternoon: 0, evening: 0, night: 0 };
-    lastPauseTimestamp = result.lastPauseTimestamp || 0;
+  chrome.storage.session.get('sessionActive', (sessionResult) => {
+    const isNewSession = !sessionResult.sessionActive;
 
-    checkMidnightReset();
+    chrome.storage.local.get([
+      'startTime', 'elapsedTime', 'isRunning', 'dailyLogs', 'lastRecordedDate', 'reminderDisabledUntil', 'wasAutoPaused', 'dailyPauses', 'dailyGoalMs', 'lastWeeklyReportDate',
+      'longestSessionMs', 'startTimesSum', 'startTimesCount', 'hasStartedToday', 'timeOfDayBuckets', 'lastPauseTimestamp', 'lastHeartbeatTime'
+    ], (result) => {
+      startTime = result.startTime || 0;
+      elapsedTime = result.elapsedTime || 0;
+      isRunning = result.isRunning || false;
+      dailyLogs = result.dailyLogs || {};
+      lastRecordedDate = result.lastRecordedDate || getTodayDate();
+      reminderDisabledUntil = result.reminderDisabledUntil || 0;
+      wasAutoPaused = result.wasAutoPaused || false;
+      dailyPauses = result.dailyPauses || {};
+      dailyGoalMs = result.dailyGoalMs || 8 * 60 * 60 * 1000;
+      lastWeeklyReportDate = result.lastWeeklyReportDate || '';
+      
+      longestSessionMs = result.longestSessionMs || 0;
+      startTimesSum = result.startTimesSum || 0;
+      startTimesCount = result.startTimesCount || 0;
+      hasStartedToday = result.hasStartedToday || false;
+      timeOfDayBuckets = result.timeOfDayBuckets || { morning: 0, afternoon: 0, evening: 0, night: 0 };
+      lastPauseTimestamp = result.lastPauseTimestamp || 0;
+      const lastHeartbeatTime = result.lastHeartbeatTime || 0;
 
-    if (isRunning) {
-      startBadgeUpdate();
-    }
-    resolve();
+      if (isNewSession) {
+        chrome.storage.session.set({ sessionActive: true });
+
+        // If it was running on a previous Chrome/PC session, we were shut down unexpectedly.
+        // Cap the worked time at the last known heartbeat to avoid counting offline time!
+        if (isRunning) {
+          isRunning = false;
+          
+          let activeDuration = 0;
+          if (lastHeartbeatTime > startTime) {
+            activeDuration = lastHeartbeatTime - startTime;
+          }
+          
+          elapsedTime += activeDuration;
+          recordWorkedTime(activeDuration, lastRecordedDate);
+          checkLongestSession(elapsedTime);
+          
+          if (activeDuration > 0) {
+            recordTimeOfDayBuckets(startTime, startTime + activeDuration);
+          }
+          
+          startTime = 0;
+          lastPauseTimestamp = Date.now();
+          
+          chrome.storage.local.set({ 
+            isRunning, 
+            elapsedTime, 
+            startTime, 
+            dailyLogs, 
+            longestSessionMs, 
+            timeOfDayBuckets, 
+            lastPauseTimestamp,
+            lastHeartbeatTime: 0 
+          });
+        }
+      }
+
+      checkMidnightReset();
+
+      if (isRunning) {
+        lastSavedHeartbeatTime = Date.now();
+        startBadgeUpdate();
+      }
+      resolve();
+    });
   });
 });
 
@@ -183,6 +227,13 @@ function updateBadge() {
   }
 
   const now = Date.now();
+  
+  // Heartbeat tracking: update lastHeartbeatTime to prevent loss of track time on shutdown/restart
+  if (now - lastSavedHeartbeatTime >= 5000) {
+    lastSavedHeartbeatTime = now;
+    chrome.storage.local.set({ lastHeartbeatTime: now });
+  }
+
   const currentElapsed = now - startTime + elapsedTime;
   const formatted = formatTime(currentElapsed);
   
@@ -323,8 +374,10 @@ function doStartTimer() {
     }
     
     lastPauseTimestamp = 0;
+    const now = Date.now();
+    lastSavedHeartbeatTime = now;
     
-    chrome.storage.local.set({ isRunning, startTime, wasAutoPaused, lastPauseTimestamp });
+    chrome.storage.local.set({ isRunning, startTime, wasAutoPaused, lastPauseTimestamp, lastHeartbeatTime: now });
     startBadgeUpdate();
     chrome.notifications.clear('start-reminder');
   } else {
@@ -346,7 +399,7 @@ function doStopTimer(isManual) {
     if (isManual) recordPause('manual');
     
     lastPauseTimestamp = now;
-    chrome.storage.local.set({ isRunning, elapsedTime, wasAutoPaused, lastPauseTimestamp });
+    chrome.storage.local.set({ isRunning, elapsedTime, wasAutoPaused, lastPauseTimestamp, lastHeartbeatTime: 0 });
     stopBadgeUpdate();
   } else {
     chrome.storage.local.set({ wasAutoPaused });
@@ -379,7 +432,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       isRunning = false;
       elapsedTime = 0;
       startTime = 0;
-      chrome.storage.local.set({ isRunning, elapsedTime, startTime, wasAutoPaused });
+      chrome.storage.local.set({ isRunning, elapsedTime, startTime, wasAutoPaused, lastHeartbeatTime: 0 });
       stopBadgeUpdate();
       sendResponse({ success: true });
     }
@@ -418,7 +471,7 @@ chrome.idle.onStateChanged.addListener((newState) => {
         
         wasAutoPaused = true;
         lastPauseTimestamp = Date.now();
-        chrome.storage.local.set({ isRunning, elapsedTime, wasAutoPaused, lastPauseTimestamp });
+        chrome.storage.local.set({ isRunning, elapsedTime, wasAutoPaused, lastPauseTimestamp, lastHeartbeatTime: 0 });
         stopBadgeUpdate();
 
         chrome.notifications.create('auto-pause-notification', {
@@ -443,8 +496,10 @@ chrome.idle.onStateChanged.addListener((newState) => {
         overworkNotifiedForCurrentSession = false;
         
         lastPauseTimestamp = 0;
+        const now = Date.now();
+        lastSavedHeartbeatTime = now;
         
-        chrome.storage.local.set({ isRunning, startTime, wasAutoPaused, lastPauseTimestamp });
+        chrome.storage.local.set({ isRunning, startTime, wasAutoPaused, lastPauseTimestamp, lastHeartbeatTime: now });
         startBadgeUpdate();
 
         chrome.notifications.create('auto-resume-notification', {
