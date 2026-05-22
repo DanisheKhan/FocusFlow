@@ -144,6 +144,61 @@
         </div>
       </div>
     </div>
+
+    <div class="sheets-sync-card">
+      <!-- COMPACT ROW (Always Visible) -->
+      <div class="sheets-compact-row">
+        <div class="sheets-compact-left">
+          <svg class="sheets-icon" viewBox="0 0 24 24" fill="currentColor">
+            <path d="M19 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zM6 6h5v5H6V6zm0 6h5v6H6v-6zm12 6h-5v-5h5v5zm0-7h-5V6h5v5z"/>
+          </svg>
+          <span id="syncStatus" class="sync-status disconnected">Not Connected</span>
+        </div>
+        <div class="sheets-compact-actions">
+          <button id="syncNowBtn" class="btn-compact-sync" disabled>Sync</button>
+          <button id="configToggleBtn" class="btn-compact-icon" title="Configure Cloud Sync">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="gear-icon">
+              <circle cx="12" cy="12" r="3"></circle>
+              <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
+            </svg>
+          </button>
+        </div>
+      </div>
+
+      <!-- COLLAPSIBLE CONFIG PANEL -->
+      <div id="sheetsConfigPanel" class="sheets-config-panel hidden">
+        <div class="sync-input-group">
+          <input type="text" id="sheetsUrlInput" class="sheets-input-url" placeholder="Paste Apps Script Web App URL...">
+        </div>
+        
+        <div class="sync-actions-row">
+          <button id="saveConnectBtn" class="btn-sync-action">Save & Sync</button>
+          <div class="auto-sync-inline">
+            <span class="auto-sync-label">Auto-Sync</span>
+            <label class="auto-sync-switch">
+              <input type="checkbox" id="autoSyncCheckbox">
+              <span class="slider"></span>
+            </label>
+          </div>
+        </div>
+        
+        <div class="guide-accordion">
+          <button id="guideToggleBtn" class="btn-guide-toggle">Show Setup Guide</button>
+          <div id="guideContent" class="guide-content hidden">
+            <ol class="guide-list">
+              <li>Create a new Google Sheet.</li>
+              <li>Go to <strong>Extensions &rarr; Apps Script</strong>.</li>
+              <li>Paste our custom script (click copy button).</li>
+              <li>Click <strong>Deploy &rarr; New deployment</strong>.</li>
+              <li>Select <strong>Web app</strong> (gear icon).</li>
+              <li>Execute as: <strong>Me</strong>, Access: <strong>Anyone</strong>.</li>
+              <li>Deploy and copy the <strong>Web App URL</strong>.</li>
+            </ol>
+            <button id="copyScriptBtn" class="btn-copy-script">Copy Apps Script Code</button>
+          </div>
+        </div>
+      </div>
+    </div>
   </div>
 
   <script src="popup.js"></script>

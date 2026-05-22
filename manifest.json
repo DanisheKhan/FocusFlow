@@ -4,6 +4,9 @@
   "version": "1.0",
   "description": "A premium, minimalist tracker for deep focus and productivity.",
   "permissions": ["storage", "alarms", "notifications", "idle"],
+  "host_permissions": [
+    "https://script.google.com/*"
+  ],
   "action": {
     "default_popup": "popup.html",
     "default_icon": {

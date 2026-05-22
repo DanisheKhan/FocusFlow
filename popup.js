@@ -51,6 +51,18 @@ const barNight = document.getElementById('barNight');
 const dailyGoalInput = document.getElementById('dailyGoalInput');
 const currentTimeEl = document.getElementById('currentTime');
 
+// Google Sheets Sync Elements
+const syncStatusEl = document.getElementById('syncStatus');
+const sheetsUrlInput = document.getElementById('sheetsUrlInput');
+const saveConnectBtn = document.getElementById('saveConnectBtn');
+const syncNowBtn = document.getElementById('syncNowBtn');
+const autoSyncCheckbox = document.getElementById('autoSyncCheckbox');
+const guideToggleBtn = document.getElementById('guideToggleBtn');
+const guideContent = document.getElementById('guideContent');
+const copyScriptBtn = document.getElementById('copyScriptBtn');
+const configToggleBtn = document.getElementById('configToggleBtn');
+const sheetsConfigPanel = document.getElementById('sheetsConfigPanel');
+
 dailyGoalInput.addEventListener('change', (e) => {
   const val = parseFloat(e.target.value);
   if (val > 0) {
@@ -234,6 +246,57 @@ function updateUI() {
         }
       }
 
+      // Update Google Sheets Sync status
+      if (syncStatusEl && sheetsUrlInput && saveConnectBtn && syncNowBtn && autoSyncCheckbox) {
+        const savedUrl = response.googleSheetsUrl || '';
+        const syncStatus = response.googleSheetsSyncStatus || 'disconnected';
+        const autoSync = response.googleSheetsAutoSync || false;
+        const lastSync = response.googleSheetsLastSyncTime || 0;
+        
+        if (document.activeElement !== sheetsUrlInput) {
+          sheetsUrlInput.value = savedUrl;
+        }
+        
+        autoSyncCheckbox.checked = autoSync;
+        
+        syncStatusEl.className = 'sync-status';
+        
+        if (syncStatus === 'connected') {
+          syncStatusEl.classList.add('connected');
+          
+          let lastTimeStr = 'Never';
+          if (lastSync > 0) {
+            const diff = Date.now() - lastSync;
+            const mins = Math.floor(diff / 60000);
+            if (mins < 1) lastTimeStr = 'Just now';
+            else if (mins < 60) lastTimeStr = `${mins}m ago`;
+            else {
+              const hrs = Math.floor(mins / 60);
+              if (hrs < 24) lastTimeStr = `${hrs}h ago`;
+              else lastTimeStr = new Date(lastSync).toLocaleDateString();
+            }
+          }
+          syncStatusEl.textContent = `Connected (Synced: ${lastTimeStr})`;
+          syncNowBtn.disabled = false;
+          saveConnectBtn.textContent = sheetsUrlInput.value.trim() === '' ? 'Save' : 'Disconnect';
+        } else if (syncStatus === 'connecting') {
+          syncStatusEl.classList.add('connecting');
+          syncStatusEl.textContent = 'Connecting...';
+          syncNowBtn.disabled = true;
+          saveConnectBtn.textContent = 'Connecting...';
+        } else if (syncStatus === 'failed') {
+          syncStatusEl.classList.add('failed');
+          syncStatusEl.textContent = 'Failed';
+          syncNowBtn.disabled = !savedUrl;
+          saveConnectBtn.textContent = sheetsUrlInput.value.trim() === '' ? 'Save' : 'Reconnect';
+        } else {
+          syncStatusEl.classList.add('disconnected');
+          syncStatusEl.textContent = 'Not Connected';
+          syncNowBtn.disabled = true;
+          saveConnectBtn.textContent = 'Save & Sync';
+        }
+      }
+
       // Live update selected day details if open
       if (!historyPanel.classList.contains('hidden')) {
         updateSelectedDateDetails();
@@ -406,6 +469,205 @@ startStopBtn.addEventListener('click', () => {
     chrome.runtime.sendMessage({ type: 'START' }, updateUI);
   }
 });
+
+// Google Sheets Sync Listeners
+if (saveConnectBtn && sheetsUrlInput && syncStatusEl && syncNowBtn && autoSyncCheckbox && guideToggleBtn && guideContent && copyScriptBtn) {
+  if (configToggleBtn && sheetsConfigPanel) {
+    configToggleBtn.addEventListener('click', () => {
+      const isHidden = sheetsConfigPanel.classList.toggle('hidden');
+      configToggleBtn.classList.toggle('active', !isHidden);
+    });
+  }
+
+  saveConnectBtn.addEventListener('click', () => {
+    const url = sheetsUrlInput.value.trim();
+    
+    if (saveConnectBtn.textContent === 'Disconnect') {
+      sheetsUrlInput.value = '';
+      chrome.runtime.sendMessage({ type: 'DISCONNECT_SHEETS' }, updateUI);
+      return;
+    }
+    
+    if (!url) {
+      chrome.runtime.sendMessage({ type: 'DISCONNECT_SHEETS' }, updateUI);
+      return;
+    }
+    
+    syncStatusEl.textContent = 'Connecting...';
+    syncStatusEl.className = 'sync-status connecting';
+    saveConnectBtn.textContent = 'Connecting...';
+    saveConnectBtn.disabled = true;
+    syncNowBtn.disabled = true;
+    
+    chrome.runtime.sendMessage({ type: 'TEST_CONNECT', url: url }, (response) => {
+      saveConnectBtn.disabled = false;
+      if (response && response.success) {
+        alert('Connected successfully! Google Sheet has been populated with your current data.');
+      } else {
+        alert('Connection failed: ' + (response ? response.error : 'Unknown error'));
+      }
+      updateUI();
+    });
+  });
+
+  syncNowBtn.addEventListener('click', () => {
+    syncNowBtn.disabled = true;
+    const oldText = syncNowBtn.textContent;
+    syncNowBtn.textContent = 'Syncing...';
+    
+    chrome.runtime.sendMessage({ type: 'SYNC_NOW' }, (response) => {
+      syncNowBtn.disabled = false;
+      syncNowBtn.textContent = oldText;
+      if (response && response.success) {
+        alert('Sync complete! ' + response.count + ' rows updated.');
+      } else {
+        alert('Sync failed: ' + (response ? response.error : 'Unknown error'));
+      }
+      updateUI();
+    });
+  });
+
+  autoSyncCheckbox.addEventListener('change', (e) => {
+    chrome.runtime.sendMessage({ type: 'UPDATE_AUTO_SYNC', autoSync: e.target.checked }, updateUI);
+  });
+
+  guideToggleBtn.addEventListener('click', () => {
+    const isOpen = guideContent.classList.toggle('hidden');
+    guideToggleBtn.classList.toggle('open', !isOpen);
+    guideToggleBtn.textContent = isOpen ? 'Show Setup Guide' : 'Hide Setup Guide';
+  });
+
+  copyScriptBtn.addEventListener('click', () => {
+    const scriptCode = `function doPost(e) {
+  try {
+    var data = JSON.parse(e.postData.contents);
+    var sheet = SpreadsheetApp.getActiveSpreadsheet().getActiveSheet();
+    
+    // Create header row if the sheet is completely empty
+    if (sheet.getLastRow() === 0) {
+      sheet.appendRow(["Date", "Work Hours", "Break Hours", "Manual Pauses", "Idle Pauses", "Work %", "Last Updated"]);
+      sheet.getRange("A1:G1").setFontWeight("bold").setBackground("#1e293b").setFontColor("#ffffff");
+    }
+    
+    // Helper function to standardise any date format to YYYY-MM-DD cleanly
+    function parseDateString(str) {
+      if (!str) return "";
+      str = String(str).trim();
+      if (/^\d{4}-\d{2}-\d{2}$/.test(str)) {
+        return str;
+      }
+      var m = str.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})$/);
+      if (m) {
+        var month = ("0" + m[1]).slice(-2);
+        var day = ("0" + m[2]).slice(-2);
+        return m[3] + "-" + month + "-" + day;
+      }
+      try {
+        var d = new Date(str);
+        if (!isNaN(d.getTime())) {
+          var year = d.getFullYear();
+          var month = ("0" + (d.getMonth() + 1)).slice(-2);
+          var day = ("0" + d.getDate()).slice(-2);
+          return year + "-" + month + "-" + day;
+        }
+      } catch (e) {}
+      return str;
+    }
+    
+    // Build a map of existing dates using displayed string values (bypasses JVM timezone-shifting)
+    var dateRowMap = {};
+    if (sheet.getLastRow() > 1) {
+      var existingData = sheet.getRange(2, 1, sheet.getLastRow() - 1, 7).getDisplayValues();
+      for (var r = 0; r < existingData.length; r++) {
+        var rawDateVal = existingData[r][0];
+        if (rawDateVal) {
+          var parsedKey = parseDateString(rawDateVal);
+          if (parsedKey) {
+            dateRowMap[parsedKey] = r + 2; // Rows are 1-indexed, data starts at row 2
+          }
+        }
+      }
+    }
+    
+    var logs = data.dailyLogs || {};
+    var breaks = data.dailyBreaks || {};
+    var pauses = data.dailyPauses || {};
+    
+    var dates = Object.keys(logs).concat(Object.keys(breaks)).concat(Object.keys(pauses));
+    dates = Array.from(new Set(dates)).sort();
+    
+    if (dates.length === 0) {
+      return ContentService.createTextOutput(JSON.stringify({ success: true, count: 0, message: "No data to sync." }))
+        .setMimeType(ContentService.MimeType.JSON);
+    }
+    
+    var nowStr = new Date().toLocaleString();
+    var updatedCount = 0;
+    
+    for (var i = 0; i < dates.length; i++) {
+      var dateStr = dates[i];
+      var workMs = logs[dateStr] || 0;
+      var breakMs = breaks[dateStr] || 0;
+      var pauseData = pauses[dateStr] || { manual: 0, idle: 0 };
+      
+      var workHours = Number((workMs / 3600000).toFixed(2));
+      var breakHours = Number((breakMs / 3600000).toFixed(2));
+      var manual = pauseData.manual || 0;
+      var idle = pauseData.idle || 0;
+      
+      var totalHours = workHours + breakHours;
+      var workPct = totalHours > 0 ? Math.round((workHours / totalHours) * 100) : 0;
+      
+      var rowValues = [
+        dateStr,
+        workHours,
+        breakHours,
+        manual,
+        idle,
+        workPct + "%",
+        nowStr
+      ];
+      
+      if (dateRowMap[dateStr]) {
+        // Update existing row
+        var targetRow = dateRowMap[dateStr];
+        sheet.getRange(targetRow, 1, 1, 7).setValues([rowValues]);
+      } else {
+        // Append new row
+        sheet.appendRow(rowValues);
+        dateRowMap[dateStr] = sheet.getLastRow();
+      }
+      updatedCount++;
+    }
+    
+    // Sort rows by Date (Column A) ascending to keep everything perfectly chronological
+    if (sheet.getLastRow() > 1) {
+      sheet.getRange(2, 1, sheet.getLastRow() - 1, 7).sort({column: 1, ascending: true});
+      sheet.autoResizeColumns(1, 7);
+    }
+    
+    return ContentService.createTextOutput(JSON.stringify({ success: true, count: updatedCount }))
+      .setMimeType(ContentService.MimeType.JSON);
+    
+  } catch (error) {
+    return ContentService.createTextOutput(JSON.stringify({ success: false, error: error.toString() }))
+      .setMimeType(ContentService.MimeType.JSON);
+  }
+}`;
+
+    navigator.clipboard.writeText(scriptCode).then(() => {
+      copyScriptBtn.textContent = 'Copied Code!';
+      copyScriptBtn.classList.add('success');
+      setTimeout(() => {
+        copyScriptBtn.textContent = 'Copy Apps Script Code';
+        copyScriptBtn.classList.remove('success');
+      }, 2000);
+    }).catch(err => {
+      console.error('Failed to copy text: ', err);
+      alert('Could not auto-copy. Please select and copy code manually.');
+    });
+  });
+}
 
 const resetBtn = document.getElementById('resetBtn');
 resetBtn.addEventListener('click', () => {

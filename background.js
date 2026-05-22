@@ -8,6 +8,12 @@ let dailyBreaks = {}; // New: Track break durations daily
 let dailyGoalMs = 8 * 60 * 60 * 1000;
 let lastWeeklyReportDate = '';
 
+// Google Sheets Sync State
+let googleSheetsUrl = '';
+let googleSheetsAutoSync = false;
+let googleSheetsSyncStatus = 'disconnected';
+let googleSheetsLastSyncTime = 0;
+
 // New Features State
 let longestSessionMs = 0;
 let overworkNotifiedForCurrentSession = false;
@@ -34,7 +40,8 @@ let storageLoadedPromise = new Promise((resolve) => {
 
     chrome.storage.local.get([
       'startTime', 'elapsedTime', 'isRunning', 'dailyLogs', 'lastRecordedDate', 'reminderDisabledUntil', 'wasAutoPaused', 'dailyPauses', 'dailyGoalMs', 'lastWeeklyReportDate',
-      'longestSessionMs', 'startTimesSum', 'startTimesCount', 'hasStartedToday', 'timeOfDayBuckets', 'lastPauseTimestamp', 'lastHeartbeatTime', 'dailyBreaks'
+      'longestSessionMs', 'startTimesSum', 'startTimesCount', 'hasStartedToday', 'timeOfDayBuckets', 'lastPauseTimestamp', 'lastHeartbeatTime', 'dailyBreaks',
+      'googleSheetsUrl', 'googleSheetsAutoSync', 'googleSheetsSyncStatus', 'googleSheetsLastSyncTime'
     ], (result) => {
       startTime = result.startTime || 0;
       elapsedTime = result.elapsedTime || 0;
@@ -55,6 +62,11 @@ let storageLoadedPromise = new Promise((resolve) => {
       timeOfDayBuckets = result.timeOfDayBuckets || { morning: 0, afternoon: 0, evening: 0, night: 0 };
       lastPauseTimestamp = result.lastPauseTimestamp || 0;
       const lastHeartbeatTime = result.lastHeartbeatTime || 0;
+
+      googleSheetsUrl = result.googleSheetsUrl || '';
+      googleSheetsAutoSync = result.googleSheetsAutoSync || false;
+      googleSheetsSyncStatus = result.googleSheetsSyncStatus || 'disconnected';
+      googleSheetsLastSyncTime = result.googleSheetsLastSyncTime || 0;
 
       if (isNewSession) {
         chrome.storage.session.set({ sessionActive: true });
@@ -132,6 +144,10 @@ function checkMidnightReset() {
     lastRecordedDate = today;
     reminderDisabledUntil = 0;
     chrome.storage.local.set({ isRunning, elapsedTime, startTime, lastRecordedDate, reminderDisabledUntil, hasStartedToday, lastPauseTimestamp });
+    
+    if (googleSheetsAutoSync && googleSheetsUrl) {
+      syncToGoogleSheets();
+    }
     
     if (isRunning) {
       updateBadge();
@@ -472,6 +488,10 @@ function doStopTimer(isManual) {
     lastPauseTimestamp = now;
     chrome.storage.local.set({ isRunning, elapsedTime, wasAutoPaused, lastPauseTimestamp, lastHeartbeatTime: 0 });
     stopBadgeUpdate();
+    
+    if (googleSheetsAutoSync && googleSheetsUrl) {
+      syncToGoogleSheets();
+    }
   } else {
     chrome.storage.local.set({ wasAutoPaused });
   }
@@ -492,7 +512,8 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       sendResponse({ 
         isRunning, elapsedTime: currentElapsed, dailyLogs, dailyPauses, 
         dailyGoalMs, startTime, longestSessionMs, startTimesSum, startTimesCount,
-        timeOfDayBuckets, dailyBreaks, lastPauseTimestamp
+        timeOfDayBuckets, dailyBreaks, lastPauseTimestamp,
+        googleSheetsUrl, googleSheetsAutoSync, googleSheetsSyncStatus, googleSheetsLastSyncTime
       });
     } else if (message.type === 'UPDATE_GOAL') {
       dailyGoalMs = message.dailyGoalMs;
@@ -505,6 +526,28 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       startTime = 0;
       chrome.storage.local.set({ isRunning, elapsedTime, startTime, wasAutoPaused, lastHeartbeatTime: 0 });
       stopBadgeUpdate();
+      if (googleSheetsAutoSync && googleSheetsUrl) {
+        syncToGoogleSheets();
+      }
+      sendResponse({ success: true });
+    } else if (message.type === 'TEST_CONNECT') {
+      syncToGoogleSheets(message.url).then(res => {
+        sendResponse(res);
+      });
+    } else if (message.type === 'SYNC_NOW') {
+      syncToGoogleSheets().then(res => {
+        sendResponse(res);
+      });
+    } else if (message.type === 'UPDATE_AUTO_SYNC') {
+      googleSheetsAutoSync = message.autoSync;
+      chrome.storage.local.set({ googleSheetsAutoSync });
+      sendResponse({ success: true });
+    } else if (message.type === 'DISCONNECT_SHEETS') {
+      googleSheetsUrl = '';
+      googleSheetsAutoSync = false;
+      googleSheetsSyncStatus = 'disconnected';
+      googleSheetsLastSyncTime = 0;
+      chrome.storage.local.set({ googleSheetsUrl, googleSheetsAutoSync, googleSheetsSyncStatus, googleSheetsLastSyncTime });
       sendResponse({ success: true });
     }
   });
@@ -623,5 +666,91 @@ chrome.runtime.onSuspend.addListener(() => {
     chrome.storage.local.set({ lastHeartbeatTime: now });
   }
 });
+
+// --- Google Sheets Sync Engine ---
+function syncToGoogleSheets(customUrl = null) {
+  const urlToUse = customUrl || googleSheetsUrl;
+  if (!urlToUse) {
+    return Promise.resolve({ success: false, error: 'No URL configured' });
+  }
+
+  googleSheetsSyncStatus = 'connecting';
+  chrome.storage.local.set({ googleSheetsSyncStatus });
+  chrome.runtime.sendMessage({ type: 'STATE_UPDATED' }).catch(() => {});
+
+  const today = getTodayDate();
+  const logsToSync = { ...dailyLogs };
+  const breaksToSync = { ...dailyBreaks };
+  const pausesToSync = { ...dailyPauses };
+
+  // Calculate live work time today
+  const todayWork = isRunning ? (Date.now() - startTime + elapsedTime) : elapsedTime;
+  if (todayWork > 0) {
+    logsToSync[today] = todayWork;
+  }
+
+  // Calculate live break time today
+  let activeBreak = 0;
+  if (!isRunning && lastPauseTimestamp > 0) {
+    activeBreak = Date.now() - lastPauseTimestamp;
+    const MAX_BREAK_MS = 2 * 60 * 60 * 1000;
+    if (activeBreak > MAX_BREAK_MS) {
+      activeBreak = MAX_BREAK_MS;
+    }
+  }
+  const todayBreakTotal = (dailyBreaks[today] || 0) + activeBreak;
+  if (todayBreakTotal > 0) {
+    breaksToSync[today] = todayBreakTotal;
+  }
+
+  const payload = {
+    dailyLogs: logsToSync,
+    dailyBreaks: breaksToSync,
+    dailyPauses: pausesToSync
+  };
+
+  return fetch(urlToUse, {
+    method: 'POST',
+    mode: 'cors',
+    headers: {
+      'Content-Type': 'text/plain;charset=utf-8'
+    },
+    body: JSON.stringify(payload)
+  })
+  .then(response => {
+    if (!response.ok) {
+      throw new Error(`HTTP error! status: ${response.status}`);
+    }
+    return response.json();
+  })
+  .then(data => {
+    if (data && data.success) {
+      googleSheetsSyncStatus = 'connected';
+      googleSheetsLastSyncTime = Date.now();
+      
+      const updateObj = { 
+        googleSheetsSyncStatus, 
+        googleSheetsLastSyncTime 
+      };
+      if (customUrl) {
+        googleSheetsUrl = customUrl;
+        updateObj.googleSheetsUrl = customUrl;
+      }
+      
+      chrome.storage.local.set(updateObj);
+      chrome.runtime.sendMessage({ type: 'STATE_UPDATED' }).catch(() => {});
+      return { success: true, count: data.count };
+    } else {
+      throw new Error((data && data.error) || 'Apps Script returned failure');
+    }
+  })
+  .catch(error => {
+    console.error('Focus Flow: Google Sheets sync failed:', error);
+    googleSheetsSyncStatus = 'failed';
+    chrome.storage.local.set({ googleSheetsSyncStatus });
+    chrome.runtime.sendMessage({ type: 'STATE_UPDATED' }).catch(() => {});
+    return { success: false, error: error.toString() };
+  });
+}
 
 
