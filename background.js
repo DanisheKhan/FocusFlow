@@ -4,6 +4,7 @@ let elapsedTime = 0;
 let isRunning = false;
 let dailyLogs = {};
 let dailyPauses = {};
+let dailyBreaks = {}; // New: Track break durations daily
 let dailyGoalMs = 8 * 60 * 60 * 1000;
 let lastWeeklyReportDate = '';
 
@@ -33,12 +34,13 @@ let storageLoadedPromise = new Promise((resolve) => {
 
     chrome.storage.local.get([
       'startTime', 'elapsedTime', 'isRunning', 'dailyLogs', 'lastRecordedDate', 'reminderDisabledUntil', 'wasAutoPaused', 'dailyPauses', 'dailyGoalMs', 'lastWeeklyReportDate',
-      'longestSessionMs', 'startTimesSum', 'startTimesCount', 'hasStartedToday', 'timeOfDayBuckets', 'lastPauseTimestamp', 'lastHeartbeatTime'
+      'longestSessionMs', 'startTimesSum', 'startTimesCount', 'hasStartedToday', 'timeOfDayBuckets', 'lastPauseTimestamp', 'lastHeartbeatTime', 'dailyBreaks'
     ], (result) => {
       startTime = result.startTime || 0;
       elapsedTime = result.elapsedTime || 0;
       isRunning = result.isRunning || false;
       dailyLogs = result.dailyLogs || {};
+      dailyBreaks = result.dailyBreaks || {};
       lastRecordedDate = result.lastRecordedDate || getTodayDate();
       reminderDisabledUntil = result.reminderDisabledUntil || 0;
       wasAutoPaused = result.wasAutoPaused || false;
@@ -124,9 +126,9 @@ function checkMidnightReset() {
       elapsedTime = 0;
       startTime = 0;
       hasStartedToday = false;
-      lastPauseTimestamp = 0;
     }
     
+    lastPauseTimestamp = 0; // Always clear pause timestamp on midnight reset so breaks do not carry over!
     lastRecordedDate = today;
     reminderDisabledUntil = 0;
     chrome.storage.local.set({ isRunning, elapsedTime, startTime, lastRecordedDate, reminderDisabledUntil, hasStartedToday, lastPauseTimestamp });
@@ -145,8 +147,52 @@ chrome.alarms.onAlarm.addListener((alarm) => {
   if (alarm.name === 'daily-reset-check') {
     checkMidnightReset();
     checkWeeklyReport();
+    
+    // Heartbeat tracking inside the alarm to survive service worker suspensions.
+    // Alarms wake up the background script every minute on active computers.
+    if (isRunning) {
+      const now = Date.now();
+      chrome.storage.local.get(['lastHeartbeatTime', 'startTime', 'elapsedTime'], (result) => {
+        const lastHb = result.lastHeartbeatTime || 0;
+        const sTime = result.startTime || 0;
+        const elTime = result.elapsedTime || 0;
+        
+        if (lastHb > 0 && now - lastHb > 5 * 60 * 1000) {
+          // Device woke up from sleep or hibernate (alarm did not run for >5 minutes)
+          handleSleepStop(lastHb, sTime, elTime);
+        } else {
+          // PC is active, update heartbeat timestamp
+          chrome.storage.local.set({ lastHeartbeatTime: now });
+          lastSavedHeartbeatTime = now;
+        }
+      });
+    }
   }
 });
+
+function handleSleepStop(lastHb, sTime, elTime) {
+  isRunning = false;
+  const activeDuration = Math.max(0, lastHb - sTime);
+  elapsedTime = elTime + activeDuration;
+  recordWorkedTime(activeDuration);
+  checkLongestSession(elapsedTime);
+  if (activeDuration > 0) recordTimeOfDayBuckets(sTime, sTime + activeDuration);
+  recordPause('idle');
+  
+  wasAutoPaused = false; 
+  lastPauseTimestamp = 0; // PC Sleep means session ended, not a break!
+  chrome.storage.local.set({ isRunning, elapsedTime, wasAutoPaused, lastPauseTimestamp, lastHeartbeatTime: 0 });
+  stopBadgeUpdate();
+  
+  chrome.notifications.create('sleep-stop-notification', {
+    type: 'basic',
+    iconUrl: 'icons/logo.png',
+    title: 'Focus Flow: Stopped',
+    message: 'The stopwatch was stopped because the device went to sleep.',
+    priority: 1
+  });
+  chrome.runtime.sendMessage({ type: 'STATE_UPDATED' }).catch(() => {});
+}
 
 function checkWeeklyReport() {
   const now = new Date();
@@ -228,33 +274,13 @@ function updateBadge() {
 
   const now = Date.now();
   
+  // Clean, unified sleep detection that works seamlessly during active UI loops too.
   if (lastSavedHeartbeatTime > 0 && now - lastSavedHeartbeatTime > 5 * 60 * 1000) {
-    // Gap > 5 minutes detected! Device was asleep.
-    isRunning = false;
-    const activeDuration = Math.max(0, lastSavedHeartbeatTime - startTime);
-    elapsedTime += activeDuration;
-    recordWorkedTime(activeDuration);
-    checkLongestSession(elapsedTime);
-    if (activeDuration > 0) recordTimeOfDayBuckets(startTime, startTime + activeDuration);
-    recordPause('idle');
-    
-    wasAutoPaused = false; 
-    lastPauseTimestamp = lastSavedHeartbeatTime;
-    chrome.storage.local.set({ isRunning, elapsedTime, wasAutoPaused, lastPauseTimestamp, lastHeartbeatTime: 0 });
-    stopBadgeUpdate();
-    
-    chrome.notifications.create('sleep-stop-notification', {
-      type: 'basic',
-      iconUrl: 'icons/logo.png',
-      title: 'Focus Flow: Stopped',
-      message: 'The stopwatch was stopped because the device went to sleep.',
-      priority: 1
-    });
-    chrome.runtime.sendMessage({ type: 'STATE_UPDATED' }).catch(() => {});
+    handleSleepStop(lastSavedHeartbeatTime, startTime, elapsedTime);
     return;
   }
 
-  // Heartbeat tracking: update lastHeartbeatTime to prevent loss of track time on shutdown/restart
+  // Keep heartbeat fresh when actively updating badge in popup
   if (now - lastSavedHeartbeatTime >= 5000) {
     lastSavedHeartbeatTime = now;
     chrome.storage.local.set({ lastHeartbeatTime: now });
@@ -283,6 +309,12 @@ function recordWorkedTime(ms, date = null) {
   const targetDate = date || getTodayDate();
   dailyLogs[targetDate] = (dailyLogs[targetDate] || 0) + ms;
   chrome.storage.local.set({ dailyLogs });
+}
+
+function recordBreakTime(ms, date = null) {
+  const targetDate = date || getTodayDate();
+  dailyBreaks[targetDate] = (dailyBreaks[targetDate] || 0) + ms;
+  chrome.storage.local.set({ dailyBreaks });
 }
 
 function checkLongestSession(ms) {
@@ -388,21 +420,32 @@ function doStartTimer() {
   wasAutoPaused = false;
   if (!isRunning) {
     isRunning = true;
-    startTime = Date.now();
+    const now = Date.now();
+    startTime = now;
     overworkNotifiedForCurrentSession = false;
     
-    const isFirstStartOfDay = !hasStartedToday;
+    // Add the break duration since last pause, only if under the daily goal
+    if (lastPauseTimestamp > 0 && elapsedTime < dailyGoalMs) {
+      let breakDuration = now - lastPauseTimestamp;
+      if (breakDuration > 0) {
+        // Cap single break at 2 hours to avoid runaway tracking (e.g. overnight or leaving laptop on)
+        const MAX_BREAK_MS = 2 * 60 * 60 * 1000;
+        if (breakDuration > MAX_BREAK_MS) {
+          breakDuration = MAX_BREAK_MS;
+        }
+        recordBreakTime(breakDuration);
+      }
+    }
     
     if (!hasStartedToday) {
       hasStartedToday = true;
-      const now = new Date();
-      startTimesSum += (now.getHours() * 60 + now.getMinutes());
+      const d = new Date();
+      startTimesSum += (d.getHours() * 60 + d.getMinutes());
       startTimesCount += 1;
       chrome.storage.local.set({ hasStartedToday, startTimesSum, startTimesCount });
     }
     
     lastPauseTimestamp = 0;
-    const now = Date.now();
     lastSavedHeartbeatTime = now;
     
     chrome.storage.local.set({ isRunning, startTime, wasAutoPaused, lastPauseTimestamp, lastHeartbeatTime: now });
@@ -449,7 +492,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       sendResponse({ 
         isRunning, elapsedTime: currentElapsed, dailyLogs, dailyPauses, 
         dailyGoalMs, startTime, longestSessionMs, startTimesSum, startTimesCount,
-        timeOfDayBuckets
+        timeOfDayBuckets, dailyBreaks, lastPauseTimestamp
       });
     } else if (message.type === 'UPDATE_GOAL') {
       dailyGoalMs = message.dailyGoalMs;
@@ -474,57 +517,85 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 const IDLE_THRESHOLD = 900; // 15 minutes in seconds
 chrome.idle.setDetectionInterval(IDLE_THRESHOLD);
 
+function triggerAutoPause(newState) {
+  isRunning = false;
+  const now = Date.now();
+  const sessionDurationSinceStart = now - startTime;
+  let activeDuration;
+  
+  if (newState === 'idle') {
+    const idleTimeMs = IDLE_THRESHOLD * 1000;
+    activeDuration = Math.max(0, sessionDurationSinceStart - idleTimeMs);
+  } else {
+    activeDuration = sessionDurationSinceStart;
+  }
+  
+  elapsedTime += activeDuration;
+  recordWorkedTime(activeDuration);
+  checkLongestSession(elapsedTime);
+  recordTimeOfDayBuckets(startTime, startTime + activeDuration);
+  recordPause('idle');
+  
+  wasAutoPaused = newState === 'idle'; // Auto-resume if idle, but STOP if locked
+  
+  // Set lastPauseTimestamp to the actual pause trigger moment.
+  lastPauseTimestamp = now;
+  
+  chrome.storage.local.set({ isRunning, elapsedTime, wasAutoPaused, lastPauseTimestamp, lastHeartbeatTime: 0 });
+  stopBadgeUpdate();
+
+  chrome.notifications.create('auto-pause-notification', {
+    type: 'basic',
+    iconUrl: 'icons/logo.png',
+    title: newState === 'idle' ? 'Focus Flow: Auto-Paused' : 'Focus Flow: Stopped',
+    message: newState === 'idle' 
+      ? 'The stopwatch was paused after 15 minutes of inactivity.'
+      : 'The stopwatch was stopped because the system was locked or screen turned off.',
+    priority: 1
+  });
+
+  // Update any open popups
+  chrome.runtime.sendMessage({ type: 'STATE_UPDATED' }).catch(() => {});
+}
+
 chrome.idle.onStateChanged.addListener((newState) => {
   storageLoadedPromise.then(() => {
     if (newState === 'idle' || newState === 'locked') {
       if (isRunning) {
-        isRunning = false;
-        
-        const now = Date.now();
-        const sessionDurationSinceStart = now - startTime;
-        let activeDuration;
-        
+        // Smart media playback bypass: if a video or call is active, don't auto-pause
         if (newState === 'idle') {
-          const idleTimeMs = 900 * 1000;
-          activeDuration = Math.max(0, sessionDurationSinceStart - idleTimeMs);
+          chrome.tabs.query({ audible: true }, (tabs) => {
+            if (tabs && tabs.length > 0) {
+              console.log("Focus Flow: Active media playback detected. Bypassing idle state.");
+              return;
+            }
+            triggerAutoPause(newState);
+          });
         } else {
-          activeDuration = sessionDurationSinceStart;
+          triggerAutoPause(newState);
         }
-        
-        elapsedTime += activeDuration;
-        recordWorkedTime(activeDuration);
-        checkLongestSession(elapsedTime);
-        recordTimeOfDayBuckets(startTime, startTime + activeDuration);
-        recordPause('idle');
-        
-        wasAutoPaused = newState === 'idle'; // Auto-resume if idle, but STOP if locked
-        lastPauseTimestamp = Date.now();
-        chrome.storage.local.set({ isRunning, elapsedTime, wasAutoPaused, lastPauseTimestamp, lastHeartbeatTime: 0 });
-        stopBadgeUpdate();
-
-        chrome.notifications.create('auto-pause-notification', {
-          type: 'basic',
-          iconUrl: 'icons/logo.png',
-          title: newState === 'idle' ? 'Focus Flow: Auto-Paused' : 'Focus Flow: Stopped',
-          message: newState === 'idle' 
-            ? 'The stopwatch was paused after 15 minutes of inactivity.'
-            : 'The stopwatch was stopped because the system was locked or screen turned off.',
-          priority: 1
-        });
-
-        // Update any open popups
-        chrome.runtime.sendMessage({ type: 'STATE_UPDATED' }).catch(() => {});
       }
     } else if (newState === 'active') {
       checkMidnightReset();
       if (wasAutoPaused && !isRunning) {
         isRunning = true;
-        startTime = Date.now();
+        const now = Date.now();
+        startTime = now;
         wasAutoPaused = false;
         overworkNotifiedForCurrentSession = false;
         
+        if (lastPauseTimestamp > 0 && elapsedTime < dailyGoalMs) {
+          let breakDuration = now - lastPauseTimestamp;
+          if (breakDuration > 0) {
+            const MAX_BREAK_MS = 2 * 60 * 60 * 1000;
+            if (breakDuration > MAX_BREAK_MS) {
+              breakDuration = MAX_BREAK_MS;
+            }
+            recordBreakTime(breakDuration);
+          }
+        }
+        
         lastPauseTimestamp = 0;
-        const now = Date.now();
         lastSavedHeartbeatTime = now;
         
         chrome.storage.local.set({ isRunning, startTime, wasAutoPaused, lastPauseTimestamp, lastHeartbeatTime: now });
@@ -543,6 +614,14 @@ chrome.idle.onStateChanged.addListener((newState) => {
       }
     }
   });
+});
+
+// Graceful PC shutdown & Chrome exit handling
+chrome.runtime.onSuspend.addListener(() => {
+  if (isRunning) {
+    const now = Date.now();
+    chrome.storage.local.set({ lastHeartbeatTime: now });
+  }
 });
 
 

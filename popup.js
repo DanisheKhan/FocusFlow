@@ -14,6 +14,8 @@ let currentTimeOfDayBuckets = { morning: 0, afternoon: 0, evening: 0, night: 0 }
 let currentLongestSessionMs = 0;
 let currentStartTimesSum = 0;
 let currentStartTimesCount = 0;
+let currentDailyBreaks = {};
+let currentLastPauseTimestamp = 0;
 
 const displayEl = document.getElementById('display');
 const msEl = document.querySelector('.milliseconds');
@@ -30,6 +32,13 @@ const dayGoalBar = document.getElementById('dayGoalBar');
 const dayManualVal = document.getElementById('dayManualVal');
 const dayIdleVal = document.getElementById('dayIdleVal');
 const progressValueEl = document.getElementById('progressValue');
+
+const dayRatioBox = document.getElementById('dayRatioBox');
+const dayRatioVal = document.getElementById('dayRatioVal');
+const dayRatioWorkBar = document.getElementById('dayRatioWorkBar');
+const dayRatioBreakBar = document.getElementById('dayRatioBreakBar');
+const dayWorkHrs = document.getElementById('dayWorkHrs');
+const dayBreakHrs = document.getElementById('dayBreakHrs');
 
 const bestDayBadge = document.getElementById('bestDayBadge');
 const worstDayBadge = document.getElementById('worstDayBadge');
@@ -73,6 +82,87 @@ function formatShortTime(ms) {
   return `${minutes}m`;
 }
 
+let selectedDateStr = getTodayDate(); // Default to today
+
+function updateSelectedDateDetails() {
+  if (!selectedDateStr) return;
+  
+  // Parse dateStr safely
+  const parts = selectedDateStr.split('-');
+  const d = new Date(parseInt(parts[0]), parseInt(parts[1]) - 1, parseInt(parts[2]));
+  const todayStr = getTodayDate();
+  
+  let liveTime = currentDailyLogs[selectedDateStr] || 0;
+  let breakMs = currentDailyBreaks[selectedDateStr] || 0;
+  
+  if (selectedDateStr === todayStr) {
+    if (isRunning && sessionStartTime) {
+      liveTime += (Date.now() - sessionStartTime);
+    }
+    if (!isRunning && currentLastPauseTimestamp > 0 && liveTime < currentDailyGoalMs) {
+      let liveBreak = Date.now() - currentLastPauseTimestamp;
+      const MAX_BREAK_MS = 2 * 60 * 60 * 1000;
+      if (liveBreak > MAX_BREAK_MS) {
+        liveBreak = MAX_BREAK_MS;
+      }
+      breakMs += liveBreak;
+    }
+  }
+  
+  detailsDateEl.textContent = d.toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'short', day: 'numeric' });
+  detailsTimeEl.textContent = formatTime(liveTime);
+  
+  const pauses = currentDailyPauses[selectedDateStr] || { manual: 0, idle: 0 };
+  
+  if (liveTime === 0 && breakMs === 0) {
+    dayGoalVal.textContent = '-';
+    dayGoalBar.style.width = '0%';
+    dayManualVal.textContent = '-';
+    dayIdleVal.textContent = '-';
+    
+    dayRatioVal.textContent = '-';
+    dayRatioWorkBar.style.width = '0%';
+    dayRatioBreakBar.style.width = '0%';
+    dayWorkHrs.textContent = '-';
+    dayBreakHrs.textContent = '-';
+  } else {
+    // Goal Progress
+    if (liveTime > 0) {
+      const goalRatio = Math.min(Math.round((liveTime / currentDailyGoalMs) * 100), 100);
+      const goalHours = (currentDailyGoalMs / 3600000).toFixed(1);
+      const workedHours = (liveTime / 3600000).toFixed(1);
+      
+      dayGoalVal.textContent = `${workedHours}h / ${goalHours}h (${goalRatio}%)`;
+      dayGoalBar.style.width = `${goalRatio}%`;
+    } else {
+      dayGoalVal.textContent = '-';
+      dayGoalBar.style.width = '0%';
+    }
+    
+    dayManualVal.textContent = pauses.manual.toString();
+    dayIdleVal.textContent = pauses.idle.toString();
+    
+    // Work vs Break Ratio
+    const total = liveTime + breakMs;
+    if (total > 0) {
+      const workPct = Math.round((liveTime / total) * 100);
+      const breakPct = 100 - workPct;
+      
+      dayRatioVal.textContent = `${workPct}% Work / ${breakPct}% Break`;
+      dayRatioWorkBar.style.width = `${workPct}%`;
+      dayRatioBreakBar.style.width = `${breakPct}%`;
+      dayWorkHrs.textContent = formatShortTime(liveTime);
+      dayBreakHrs.textContent = formatShortTime(breakMs);
+    } else {
+      dayRatioVal.textContent = '-';
+      dayRatioWorkBar.style.width = '0%';
+      dayRatioBreakBar.style.width = '0%';
+      dayWorkHrs.textContent = '-';
+      dayBreakHrs.textContent = '-';
+    }
+  }
+}
+
 function updateUI() {
   if (currentTimeEl) {
     const now = new Date();
@@ -94,6 +184,8 @@ function updateUI() {
       currentLongestSessionMs = response.longestSessionMs || 0;
       currentStartTimesSum = response.startTimesSum || 0;
       currentStartTimesCount = response.startTimesCount || 0;
+      currentDailyBreaks = response.dailyBreaks || {};
+      currentLastPauseTimestamp = response.lastPauseTimestamp || 0;
       
       if (document.activeElement !== dailyGoalInput) {
         dailyGoalInput.value = (currentDailyGoalMs / 3600000).toFixed(1);
@@ -113,7 +205,8 @@ function updateUI() {
       }
 
       // Only update daily logs if they changed to avoid flickering
-      if (JSON.stringify(currentDailyLogs) !== JSON.stringify(response.dailyLogs)) {
+      const logsChanged = JSON.stringify(currentDailyLogs) !== JSON.stringify(response.dailyLogs);
+      if (logsChanged) {
         currentDailyLogs = response.dailyLogs || {};
         if (!historyPanel.classList.contains('hidden')) {
           renderHeatmap();
@@ -140,12 +233,14 @@ function updateUI() {
           animationFrameId = null;
         }
       }
+
+      // Live update selected day details if open
+      if (!historyPanel.classList.contains('hidden')) {
+        updateSelectedDateDetails();
+      }
     }
   });
 }
-
-
-
 
 function startAnimation() {
   const step = () => {
@@ -209,32 +304,8 @@ function renderHeatmap() {
     cell.addEventListener('click', () => {
       document.querySelectorAll('.heatmap-cell').forEach(el => el.classList.remove('selected'));
       cell.classList.add('selected');
-      
-      let liveTime = currentDailyLogs[dateStr] || 0;
-      if (dateStr === todayStr && isRunning && sessionStartTime) {
-        liveTime += (Date.now() - sessionStartTime);
-      }
-      
-      detailsDateEl.textContent = d.toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'short', day: 'numeric' });
-      detailsTimeEl.textContent = formatTime(liveTime);
-      
-      const pauses = currentDailyPauses[dateStr] || { manual: 0, idle: 0 };
-      
-      if (liveTime === 0) {
-        dayGoalVal.textContent = '-';
-        dayGoalBar.style.width = '0%';
-        dayManualVal.textContent = '-';
-        dayIdleVal.textContent = '-';
-      } else {
-        const goalRatio = Math.min(Math.round((liveTime / currentDailyGoalMs) * 100), 100);
-        const goalHours = (currentDailyGoalMs / 3600000).toFixed(1);
-        const workedHours = (liveTime / 3600000).toFixed(1);
-        
-        dayGoalVal.textContent = `${workedHours}h / ${goalHours}h (${goalRatio}%)`;
-        dayGoalBar.style.width = `${goalRatio}%`;
-        dayManualVal.textContent = pauses.manual.toString();
-        dayIdleVal.textContent = pauses.idle.toString();
-      }
+      selectedDateStr = dateStr;
+      updateSelectedDateDetails();
     });
     
     heatmapGrid.appendChild(cell);

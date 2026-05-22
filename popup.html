@@ -118,6 +118,21 @@
         </div>
       </div>
       
+      <div class="ratio-box" id="dayRatioBox">
+        <div class="ratio-labels">
+          <span class="day-stat-label">Work vs Break Ratio</span>
+          <span id="dayRatioVal" class="day-stat-val">-</span>
+        </div>
+        <div class="ratio-track">
+          <div id="dayRatioWorkBar" class="ratio-fill work" style="width: 0%"></div>
+          <div id="dayRatioBreakBar" class="ratio-fill break" style="width: 0%"></div>
+        </div>
+        <div class="ratio-legend">
+          <span><span class="legend-dot work"></span>Work: <span id="dayWorkHrs">-</span></span>
+          <span><span class="legend-dot break"></span>Break: <span id="dayBreakHrs">-</span></span>
+        </div>
+      </div>
+      
       <div class="day-stats-grid">
         <div class="day-stat-box">
           <span class="day-stat-label">Manual Pauses</span>
