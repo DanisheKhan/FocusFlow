@@ -301,16 +301,26 @@ body.history-open .btn-text::after {
 
 .heatmap-wrapper {
   overflow-x: auto;
-  padding-bottom: 12px;
+  padding: 6px 12px 12px 12px;
+  margin: 0 -12px;
 }
 
 .heatmap-wrapper::-webkit-scrollbar {
   height: 4px;
 }
 
+.heatmap-wrapper::-webkit-scrollbar-track {
+  background: transparent;
+}
+
 .heatmap-wrapper::-webkit-scrollbar-thumb {
-  background: rgba(255, 255, 255, 0.15);
-  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.12);
+  border-radius: 10px;
+  transition: var(--transition);
+}
+
+.heatmap-wrapper::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.25);
 }
 
 .heatmap-grid {
@@ -319,6 +329,7 @@ body.history-open .btn-text::after {
   grid-auto-flow: column;
   grid-auto-columns: 10px;
   gap: 3px;
+  width: max-content;
 }
 
 .heatmap-cell {
