@@ -94,7 +94,7 @@ let storageLoadedPromise = new Promise((resolve) => {
       checkMidnightReset();
 
       if (isRunning) {
-        lastSavedHeartbeatTime = Date.now();
+        lastSavedHeartbeatTime = (lastHeartbeatTime > 0 && !isNewSession) ? lastHeartbeatTime : Date.now();
         startBadgeUpdate();
       }
       resolve();
@@ -228,6 +228,32 @@ function updateBadge() {
 
   const now = Date.now();
   
+  if (lastSavedHeartbeatTime > 0 && now - lastSavedHeartbeatTime > 5 * 60 * 1000) {
+    // Gap > 5 minutes detected! Device was asleep.
+    isRunning = false;
+    const activeDuration = Math.max(0, lastSavedHeartbeatTime - startTime);
+    elapsedTime += activeDuration;
+    recordWorkedTime(activeDuration);
+    checkLongestSession(elapsedTime);
+    if (activeDuration > 0) recordTimeOfDayBuckets(startTime, startTime + activeDuration);
+    recordPause('idle');
+    
+    wasAutoPaused = false; 
+    lastPauseTimestamp = lastSavedHeartbeatTime;
+    chrome.storage.local.set({ isRunning, elapsedTime, wasAutoPaused, lastPauseTimestamp, lastHeartbeatTime: 0 });
+    stopBadgeUpdate();
+    
+    chrome.notifications.create('sleep-stop-notification', {
+      type: 'basic',
+      iconUrl: 'icons/logo.png',
+      title: 'Focus Flow: Stopped',
+      message: 'The stopwatch was stopped because the device went to sleep.',
+      priority: 1
+    });
+    chrome.runtime.sendMessage({ type: 'STATE_UPDATED' }).catch(() => {});
+    return;
+  }
+
   // Heartbeat tracking: update lastHeartbeatTime to prevent loss of track time on shutdown/restart
   if (now - lastSavedHeartbeatTime >= 5000) {
     lastSavedHeartbeatTime = now;
@@ -309,32 +335,34 @@ function formatMinutesToTime(mins) {
 }
 
 function showReminder() {
-  const now = Date.now();
-  if (now < reminderDisabledUntil) return;
-  if (isRunning) return;
+  storageLoadedPromise.then(() => {
+    const now = Date.now();
+    if (now < reminderDisabledUntil) return;
+    if (isRunning) return;
 
-  if (startTimesCount > 0) {
-    const avgMinutes = startTimesSum / startTimesCount;
-    const currentDate = new Date();
-    const currentMinutes = currentDate.getHours() * 60 + currentDate.getMinutes();
-    
-    if (currentMinutes < avgMinutes) {
-      return; 
+    if (startTimesCount > 0) {
+      const avgMinutes = startTimesSum / startTimesCount;
+      const currentDate = new Date();
+      const currentMinutes = currentDate.getHours() * 60 + currentDate.getMinutes();
+      
+      if (currentMinutes < avgMinutes) {
+        return; 
+      }
     }
-  }
 
-  if (now - lastReminderTime > REMINDER_COOLDOWN) {
-    const avgText = startTimesCount > 0 ? ` (Usually you start around ${formatMinutesToTime(startTimesSum / startTimesCount)})` : '';
-    chrome.notifications.create('start-reminder', {
-      type: 'basic',
-      iconUrl: 'icons/logo.png',
-      title: 'Focus Flow',
-      message: `Time to start your tracker?${avgText}`,
-      buttons: [{ title: 'Mute for Today' }],
-      priority: 1
-    });
-    lastReminderTime = now;
-  }
+    if (now - lastReminderTime > REMINDER_COOLDOWN) {
+      const avgText = startTimesCount > 0 ? ` (Usually you start around ${formatMinutesToTime(startTimesSum / startTimesCount)})` : '';
+      chrome.notifications.create('start-reminder', {
+        type: 'basic',
+        iconUrl: 'icons/logo.png',
+        title: 'Focus Flow',
+        message: `Time to start your tracker?${avgText}`,
+        buttons: [{ title: 'Mute for Today' }],
+        priority: 1
+      });
+      lastReminderTime = now;
+    }
+  });
 }
 
 chrome.notifications.onButtonClicked.addListener((notificationId, buttonIndex) => {
@@ -469,7 +497,7 @@ chrome.idle.onStateChanged.addListener((newState) => {
         recordTimeOfDayBuckets(startTime, startTime + activeDuration);
         recordPause('idle');
         
-        wasAutoPaused = true;
+        wasAutoPaused = newState === 'idle'; // Auto-resume if idle, but STOP if locked
         lastPauseTimestamp = Date.now();
         chrome.storage.local.set({ isRunning, elapsedTime, wasAutoPaused, lastPauseTimestamp, lastHeartbeatTime: 0 });
         stopBadgeUpdate();
@@ -477,10 +505,10 @@ chrome.idle.onStateChanged.addListener((newState) => {
         chrome.notifications.create('auto-pause-notification', {
           type: 'basic',
           iconUrl: 'icons/logo.png',
-          title: 'Focus Flow: Auto-Paused',
+          title: newState === 'idle' ? 'Focus Flow: Auto-Paused' : 'Focus Flow: Stopped',
           message: newState === 'idle' 
             ? 'The stopwatch was paused after 15 minutes of inactivity.'
-            : 'The stopwatch was paused because the system was locked.',
+            : 'The stopwatch was stopped because the system was locked or screen turned off.',
           priority: 1
         });
 
