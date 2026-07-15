@@ -1,3 +1,23 @@
+// Feature Toggle: Disable notifications for now
+const notificationsEnabled = false;
+
+// Override chrome.notifications.create to intercept and disable notifications programmatically
+const originalCreate = chrome.notifications?.create;
+if (chrome.notifications) {
+  chrome.notifications.create = function (notificationId, options, callback) {
+    if (!notificationsEnabled) {
+      console.log('Notification suppressed (notifications disabled):', notificationId, options);
+      if (callback) {
+        callback(notificationId);
+      }
+      return;
+    }
+    if (originalCreate) {
+      originalCreate(notificationId, options, callback);
+    }
+  };
+}
+
 let timerInterval = null;
 let startTime = 0;
 let elapsedTime = 0;
